@@ -49,4 +49,7 @@ sealed class StitchScreen(val route: String, val title: String) {
     object ProfessionalDashboard : StitchScreen("pro_dashboard/{proId}", "Panel del Profesional y Solicitudes") {
         fun createRoute(proId: String) = "pro_dashboard/$proId"
     }
+
+    // 11. Mi Cuenta (Perfil real y Cerrar Sesión)
+    object UserAccount : StitchScreen("my_account", "Mi Cuenta")
 }

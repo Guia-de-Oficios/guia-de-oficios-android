@@ -11,8 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -21,10 +19,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import ar.guiaoficios.app.data.model.ProfessionalDetailDto
 import ar.guiaoficios.app.data.model.ProfessionalDashboardDto
+import ar.guiaoficios.app.data.model.ProfessionalDetailDto
 import ar.guiaoficios.app.data.model.ServiceRequestDto
 import ar.guiaoficios.app.ui.MainViewModel
+import ar.guiaoficios.app.ui.components.StitchBottomNavBar
+import ar.guiaoficios.app.ui.components.StitchTopAppBar
 import ar.guiaoficios.app.ui.navigation.StitchScreen
 import ar.guiaoficios.app.ui.screens.*
 import ar.guiaoficios.app.ui.theme.*
@@ -52,6 +52,16 @@ fun GuiaDeOficiosApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: StitchScreen.WelcomeRoleSelection.route
 
+    // Si existe una sesión JWT válida guardada en el dispositivo, ingresa directo al Home / Panel correspondiente
+    LaunchedEffect(uiState.isSessionChecked, uiState.isAuthenticated) {
+        if (uiState.isSessionChecked && uiState.isAuthenticated && currentRoute.startsWith("welcome")) {
+            mainViewModel.refreshInitialData()
+            navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                popUpTo(StitchScreen.WelcomeRoleSelection.route) { inclusive = true }
+            }
+        }
+    }
+
     LaunchedEffect(uiState.statusMessage) {
         val msg = uiState.statusMessage
         if (!msg.isNullOrBlank()) {
@@ -60,57 +70,72 @@ fun GuiaDeOficiosApp(
         }
     }
 
+    val isAuthGatewayScreen = currentRoute.startsWith("welcome") || currentRoute.startsWith("register")
+    val selectedBottomTab = when {
+        currentRoute.startsWith("my_account") -> "account"
+        currentRoute.startsWith("client_home") -> "home"
+        currentRoute.startsWith("client_results") || currentRoute.startsWith("professional_profile") -> "contacts"
+        else -> "home"
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            if (!isAuthGatewayScreen) {
+                StitchTopAppBar(
+                    onMenuClick = {
+                        navController.navigate(StitchScreen.UserAccount.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onActionClick = {
+                        navController.navigate(StitchScreen.UserAccount.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    actionLabel = if (uiState.currentUser.full_name.isNotBlank()) {
+                        uiState.currentUser.full_name.substringBefore(" ")
+                    } else {
+                        "Cuenta"
+                    }
+                )
+            }
+        },
         bottomBar = {
-            NavigationBar(
-                containerColor = SurfaceContainerLowest,
-                tonalElevation = 8.dp
-            ) {
-                NavigationBarItem(
-                    selected = currentRoute.startsWith("welcome") || currentRoute.startsWith("register"),
-                    onClick = {
-                        navController.navigate(StitchScreen.WelcomeRoleSelection.route) {
-                            launchSingleTop = true
+            if (!isAuthGatewayScreen) {
+                StitchBottomNavBar(
+                    selectedTab = selectedBottomTab,
+                    onSelectTab = { tabKey ->
+                        when (tabKey) {
+                            "home" -> {
+                                mainViewModel.refreshInitialData()
+                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                    launchSingleTop = true
+                                }
+                            }
+                            "contacts" -> {
+                                mainViewModel.searchProfessionals(
+                                    categoryId = 0,
+                                    categoryTitle = "Profesionales del barrio",
+                                    filter = "all"
+                                )
+                                navController.navigate(StitchScreen.ClientSearchResults.createRoute(0)) {
+                                    launchSingleTop = true
+                                }
+                            }
+                            "help" -> {
+                                mainViewModel.showStatusMessage("Usá la tarjeta '¿No sabés qué profesional necesitás?' en Inicio para recibir asistencia inmediata.")
+                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                    launchSingleTop = true
+                                }
+                            }
+                            "account" -> {
+                                navController.navigate(StitchScreen.UserAccount.route) {
+                                    launchSingleTop = true
+                                }
+                            }
                         }
-                    },
-                    icon = { Text("👋") },
-                    label = { Text("Acceso") }
-                )
-                NavigationBarItem(
-                    selected = currentRoute.startsWith("client_home") || currentRoute.startsWith("client_results"),
-                    onClick = {
-                        mainViewModel.refreshInitialData()
-                        navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                            launchSingleTop = true
-                        }
-                    },
-                    icon = { Text("🏠") },
-                    label = { Text("Vecino") }
-                )
-                NavigationBarItem(
-                    selected = currentRoute.startsWith("professional_profile") || currentRoute.startsWith("guided_request"),
-                    onClick = {
-                        val proId = MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                        mainViewModel.loadProfessionalDetail(proId)
-                        navController.navigate(StitchScreen.ClientProfessionalProfile.createRoute(proId)) {
-                            launchSingleTop = true
-                        }
-                    },
-                    icon = { Text("🔧") },
-                    label = { Text("Roberto") }
-                )
-                NavigationBarItem(
-                    selected = currentRoute.startsWith("pro_dashboard") || currentRoute.startsWith("pro_verification"),
-                    onClick = {
-                        val proId = uiState.currentUser.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                        mainViewModel.loadProfessionalDashboard(proId)
-                        navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
-                            launchSingleTop = true
-                        }
-                    },
-                    icon = { Text("🛠️") },
-                    label = { Text("Panel Oficio") }
+                    }
                 )
             }
         }
@@ -124,19 +149,42 @@ fun GuiaDeOficiosApp(
                 navController = navController,
                 startDestination = StitchScreen.WelcomeRoleSelection.route
             ) {
-                // 1. Pantalla 1: Bienvenida y Selección de Rol
+                // 1. Pantalla 1 Stitch: Bienvenida, Login (Google o Correo/Teléfono) y Acceso al Registro
                 composable(StitchScreen.WelcomeRoleSelection.route) {
                     WelcomeRoleScreen(
-                        onContinueWithRole = { role ->
-                            navController.navigate(StitchScreen.RegisterAccount.createRoute(role))
+                        onGoogleSignIn = { email, fullName, role ->
+                            mainViewModel.authenticateWithGoogle(
+                                email = email,
+                                fullName = fullName,
+                                role = role
+                            ) { user ->
+                                mainViewModel.refreshInitialData()
+                                if (user.role == "professional" && !user.professional_id.isNullOrBlank()) {
+                                    mainViewModel.loadProfessionalDashboard(user.professional_id)
+                                }
+                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                    popUpTo(StitchScreen.WelcomeRoleSelection.route) { inclusive = true }
+                                }
+                            }
                         },
-                        onLoginClick = {
-                            navController.navigate(StitchScreen.RegisterAccount.createRoute("client"))
+                        onLoginWithCredentials = { identifier, password ->
+                            mainViewModel.loginWithEmail(identifier, password) { user ->
+                                mainViewModel.refreshInitialData()
+                                if (user.role == "professional" && !user.professional_id.isNullOrBlank()) {
+                                    mainViewModel.loadProfessionalDashboard(user.professional_id)
+                                }
+                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                    popUpTo(StitchScreen.WelcomeRoleSelection.route) { inclusive = true }
+                                }
+                            }
+                        },
+                        onNavigateToRegister = { role ->
+                            navController.navigate(StitchScreen.RegisterAccount.createRoute(role))
                         }
                     )
                 }
 
-                // 2. Pantalla 2: Registro (Google o Manual) e Inicio de Sesión
+                // 2. Pantalla 2 Stitch: Registro (Google o Manual) e Inicio de Sesión
                 composable(
                     route = StitchScreen.RegisterAccount.route,
                     arguments = listOf(navArgument("role") { type = NavType.StringType })
@@ -144,38 +192,43 @@ fun GuiaDeOficiosApp(
                     val role = backStackEntry.arguments?.getString("role") ?: "client"
                     RegisterAccountScreen(
                         initialRole = role,
-                        onContinueGoogle = { selectedRole ->
-                            mainViewModel.authenticateWithGoogle(selectedRole) { user ->
+                        onContinueGoogle = { email, fullName, selectedRole ->
+                            mainViewModel.authenticateWithGoogle(
+                                email = email,
+                                fullName = fullName,
+                                role = selectedRole
+                            ) { user ->
+                                mainViewModel.refreshInitialData()
                                 if (user.role == "professional") {
                                     val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
                                     mainViewModel.loadProfessionalDashboard(proId)
-                                    navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId))
-                                } else {
-                                    mainViewModel.refreshInitialData()
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route)
+                                }
+                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                    popUpTo(StitchScreen.WelcomeRoleSelection.route) { inclusive = true }
                                 }
                             }
                         },
                         onSubmitManual = { input ->
                             mainViewModel.registerManual(input) { user ->
-                                if (user.role == "professional") {
-                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId))
-                                } else {
-                                    mainViewModel.refreshInitialData()
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route)
-                                }
-                            }
-                        },
-                        onSubmitLogin = { email, password ->
-                            mainViewModel.loginWithEmail(email, password) { user ->
+                                mainViewModel.refreshInitialData()
                                 if (user.role == "professional") {
                                     val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
                                     mainViewModel.loadProfessionalDashboard(proId)
-                                    navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId))
-                                } else {
-                                    mainViewModel.refreshInitialData()
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route)
+                                }
+                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                    popUpTo(StitchScreen.WelcomeRoleSelection.route) { inclusive = true }
+                                }
+                            }
+                        },
+                        onSubmitLogin = { emailOrPhone, password ->
+                            mainViewModel.loginWithEmail(emailOrPhone, password) { user ->
+                                mainViewModel.refreshInitialData()
+                                if (user.role == "professional") {
+                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+                                    mainViewModel.loadProfessionalDashboard(proId)
+                                }
+                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                    popUpTo(StitchScreen.WelcomeRoleSelection.route) { inclusive = true }
                                 }
                             }
                         },
@@ -183,7 +236,7 @@ fun GuiaDeOficiosApp(
                     )
                 }
 
-                // 3. Pantalla 3: Inicio del Cliente y Categorías
+                // 3. Pantalla 3 Stitch: Inicio del Cliente y Categorías (`cliente_inicio_y_categor_as`)
                 composable(StitchScreen.ClientHomeCategories.route) {
                     HomeScreen(
                         userName = uiState.currentUser.full_name,
@@ -212,6 +265,36 @@ fun GuiaDeOficiosApp(
                         },
                         onUpdateAddress = { addr ->
                             mainViewModel.updateAddress(addr)
+                        },
+                        onOpenTopMonth = {
+                            mainViewModel.searchProfessionals(
+                                categoryId = 0,
+                                categoryTitle = "Top Profesionales del Mes",
+                                filter = "top_rated"
+                            )
+                            navController.navigate(StitchScreen.ClientSearchResults.createRoute(0))
+                        }
+                    )
+                }
+
+                // 11. Mi Cuenta (Perfil Real del Usuario + Cerrar Sesión)
+                composable(StitchScreen.UserAccount.route) {
+                    UserAccountScreen(
+                        user = uiState.currentUser,
+                        onUpdateAddress = { addr ->
+                            mainViewModel.updateAddress(addr)
+                        },
+                        onOpenProfessionalPanel = {
+                            val proId = uiState.currentUser.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+                            mainViewModel.loadProfessionalDashboard(proId)
+                            navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId))
+                        },
+                        onLogout = {
+                            mainViewModel.logout {
+                                navController.navigate(StitchScreen.WelcomeRoleSelection.route) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
                         }
                     )
                 }

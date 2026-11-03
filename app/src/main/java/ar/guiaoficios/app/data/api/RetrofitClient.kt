@@ -50,6 +50,26 @@ object RetrofitClient {
                 )
                 response
             } catch (e: Exception) {
+                // Fallback automático entre IP LAN Wi-Fi (192.168.100.11), ADB Reverse (127.0.0.1) y Emulador (10.0.2.2)
+                val fallbackHosts = listOf("127.0.0.1", "192.168.100.11", "10.0.2.2")
+                    .filter { it != req.url.host }
+                for (host in fallbackHosts) {
+                    try {
+                        val fallbackUrl = req.url.newBuilder().host(host).build()
+                        val fallbackReq = req.newBuilder().url(fallbackUrl).build()
+                        Log.w(LOG_TAG, "~~~ [TRACE:$traceId] Reintentando en host alternativo: $fallbackUrl")
+                        val response = chain.proceed(fallbackReq)
+                        val durationMs = (System.nanoTime() - startNs) / 1_000_000.0
+                        val serverTrace = response.header("X-Trace-ID") ?: traceId
+                        Log.i(
+                            LOG_TAG,
+                            "<-- [TRACE:$serverTrace] ${fallbackReq.method} ${fallbackReq.url} | status=${response.code} | duration=${String.format("%.2f", durationMs)}ms"
+                        )
+                        return@Interceptor response
+                    } catch (_: Exception) {
+                        // Continúa al siguiente host alternativo
+                    }
+                }
                 Log.e(LOG_TAG, "xxx [TRACE:$traceId] Error en ${req.method} ${req.url}: ${e.message}")
                 throw e
             }
@@ -62,7 +82,7 @@ object RetrofitClient {
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(traceAndAuthInterceptor)
             .addInterceptor(loggingInterceptor)
-            .connectTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(4, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .build()

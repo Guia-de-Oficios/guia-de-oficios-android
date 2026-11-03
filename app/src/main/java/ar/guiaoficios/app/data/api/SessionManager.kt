@@ -47,11 +47,13 @@ class SessionManager(private val context: Context) {
 
     val userFlow: Flow<UserDto?> = context.dataStore.data.map { prefs ->
         val id = prefs[KEY_USER_ID] ?: return@map null
+        val token = prefs[KEY_TOKEN]
+        if (token.isNullOrBlank()) return@map null
         UserDto(
             id = id,
-            full_name = prefs[KEY_FULL_NAME] ?: "María Elena Castro",
+            full_name = prefs[KEY_FULL_NAME] ?: "",
             email = prefs[KEY_EMAIL] ?: "",
-            phone = prefs[KEY_PHONE] ?: "11 5544-3322",
+            phone = prefs[KEY_PHONE] ?: "",
             role = prefs[KEY_ROLE] ?: "client",
             saved_address = prefs[KEY_ADDRESS] ?: "Av. Rivadavia 5420, Caballito",
             saved_lat = prefs[KEY_LAT] ?: -34.6186,

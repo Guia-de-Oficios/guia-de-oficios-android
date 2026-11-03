@@ -1,158 +1,731 @@
 package ar.guiaoficios.app.ui.screens
 
+import android.accounts.AccountManager
+import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Handyman
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonSearch
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ar.guiaoficios.app.data.model.*
+import ar.guiaoficios.app.ui.components.GdoBrandLogo
+import ar.guiaoficios.app.ui.components.GoogleColorIcon
 import ar.guiaoficios.app.ui.theme.*
 
 // =============================================================================
+// COMPONENTE COMPARTIDO: Diálogo de Cuenta Google (cuando el dispositivo no devuelve cuenta nativa)
+// =============================================================================
+@Composable
+fun GoogleAccountInputDialog(
+    role: String,
+    onDismiss: () -> Unit,
+    onConfirmAccount: (email: String, fullName: String, selectedRole: String) -> Unit
+) {
+    var googleEmail by remember { mutableStateOf("") }
+    var googleName by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf(role) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceContainerLowest,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                GoogleColorIcon(modifier = Modifier.size(24.dp))
+                Text(
+                    text = "Continuar con Google",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Ingresá tu cuenta de Google para acceder o crear tu perfil en Guía de Oficios:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OnSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = googleEmail,
+                    onValueChange = {
+                        googleEmail = it
+                        errorMsg = null
+                    },
+                    label = { Text("Correo de Google (Gmail)") },
+                    placeholder = { Text("tu.nombre@gmail.com") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = googleName,
+                    onValueChange = {
+                        googleName = it
+                        errorMsg = null
+                    },
+                    label = { Text("Tu nombre y apellido") },
+                    placeholder = { Text("Ej. Nicolás Gómez") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Text(
+                    text = "Tipo de perfil:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedRole == "client",
+                        onClick = { selectedRole = "client" },
+                        label = { Text("Vecino / Cliente") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = selectedRole == "professional",
+                        onClick = { selectedRole = "professional" },
+                        label = { Text("Profesional") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (errorMsg != null) {
+                    Text(
+                        text = errorMsg!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ErrorColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cleanEmail = googleEmail.trim()
+                    if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+                        errorMsg = "Ingresá un correo electrónico válido (ej. usuario@gmail.com)"
+                        return@Button
+                    }
+                    val cleanName = googleName.trim().ifBlank {
+                        cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
+                    }
+                    onConfirmAccount(cleanEmail, cleanName, selectedRole)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Ingresar con Google", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar", color = OnSurfaceVariant)
+            }
+        }
+    )
+}
+
+// =============================================================================
 // PANTALLA 1 STITCH: bienvenida_y_selecci_n_de_rol
+// Respeta 1:1 `bienvenida_y_selecci_n_de_rol/code.html` + `screen.png`
 // =============================================================================
 @Composable
 fun WelcomeRoleScreen(
-    onContinueWithRole: (String) -> Unit,
-    onLoginClick: () -> Unit
+    onGoogleSignIn: (email: String, fullName: String, role: String) -> Unit,
+    onLoginWithCredentials: (identifier: String, password: String) -> Unit,
+    onNavigateToRegister: (role: String) -> Unit
 ) {
     var selectedRole by remember { mutableStateOf("client") }
+    var showLoginDialog by remember { mutableStateOf(false) }
+    var showGoogleDialog by remember { mutableStateOf(false) }
 
-    Column(
+    // Selector nativo de cuenta Google de Android (AccountManager)
+    val googleAccountPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+            if (!accountName.isNullOrBlank()) {
+                val derivedName = accountName.substringBefore("@")
+                    .replace(".", " ")
+                    .replace("_", " ")
+                    .split(" ")
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
+                onGoogleSignIn(accountName, derivedName.ifBlank { "Usuario Google" }, selectedRole)
+            } else {
+                showGoogleDialog = true
+            }
+        } else {
+            // Si el dispositivo no tiene cuentas de Google sincronizadas o el usuario prefiere escribirla
+            showGoogleDialog = true
+        }
+    }
+
+    val launchGoogleFlow: () -> Unit = {
+        runCatching {
+            val intent = AccountManager.newChooseAccountIntent(
+                null,
+                null,
+                arrayOf("com.google"),
+                null,
+                null,
+                null,
+                null
+            )
+            googleAccountPickerLauncher.launch(intent)
+        }.onFailure {
+            showGoogleDialog = true
+        }
+    }
+
+    if (showGoogleDialog) {
+        GoogleAccountInputDialog(
+            role = selectedRole,
+            onDismiss = { showGoogleDialog = false },
+            onConfirmAccount = { email, fullName, role ->
+                showGoogleDialog = false
+                onGoogleSignIn(email, fullName, role)
+            }
+        )
+    }
+
+    if (showLoginDialog) {
+        LoginCredentialsDialog(
+            onDismiss = { showLoginDialog = false },
+            onSubmitLogin = { identifier, password ->
+                showLoginDialog = false
+                onLoginWithCredentials(identifier, password)
+            },
+            onGoToRegister = {
+                showLoginDialog = false
+                onNavigateToRegister(selectedRole)
+            }
+        )
+    }
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Surface)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+            .background(Surface),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            Surface(
-                color = SurfaceContainerLow,
-                shape = RoundedCornerShape(999.dp),
-                border = BorderStroke(1.dp, PrimaryFixedDim)
+        // 1. Pill Superior + Logo Oficial GDO + Título Principal
+        item {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
             ) {
+                Surface(
+                    color = Color(0xFFE4E7F9),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, PrimaryFixedDim)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = PrimaryContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Buenos Aires y Gran Buenos Aires",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryContainer
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                GdoBrandLogo(centered = true, badgeSize = 56.dp)
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Text(
-                    text = "📍 Buenos Aires y Gran Buenos Aires",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = PrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    text = "Encontrá y ofrecé oficios de confianza cerca de tu casa",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = OnSurface,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Conectate con vecinos y profesionales verificados de tu barrio. Rápido, directo y sin vueltas.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OnSurfaceVariant,
+                    textAlign = TextAlign.Center
                 )
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Encontrá profesionales de confianza cerca de tu casa",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Sin complicaciones, sin registros difíciles y con personas reales de tu barrio verificadas con DNI y oficio.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurfaceVariant
-            )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = "¿Cómo querés usar Guía de Oficios hoy?",
-                style = MaterialTheme.typography.headlineSmall
-            )
-
-            // Opción 1: Cliente / Vecino
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-                border = BorderStroke(
-                    width = 2.dp,
-                    color = if (selectedRole == "client") PrimaryContainer else OutlineVariant
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedRole = "client" }
+        // 2. Bloque de Ingreso Principal (Exacto a `bienvenida_y_selecci_n_de_rol/code.html`)
+        item {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "🏠 Necesito un oficio para mi casa",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                // Botón 1: Continuar con Google (Blanco, borde 2dp #C4C5D9, ícono 4 colores)
+                Surface(
+                    onClick = launchGoogleFlow,
+                    shape = RoundedCornerShape(12.dp),
+                    color = SurfaceContainerLowest,
+                    border = BorderStroke(2.dp, OutlineVariant),
+                    shadowElevation = 1.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        GoogleColorIcon(modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Continuar con Google",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
+                        )
+                    }
+                }
+
+                // Divisor "o ingresá con tu cuenta"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = OutlineVariant
                     )
                     Text(
-                        text = "Busco plomeros, electricistas, gasistas y más en mi barrio.",
+                        text = "O INGRESÁ CON TU CUENTA",
                         style = MaterialTheme.typography.labelSmall,
-                        color = OnSurfaceVariant
+                        fontWeight = FontWeight.Bold,
+                        color = OnSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = OutlineVariant
+                    )
+                }
+
+                // Botón 2: Ingresar con correo o teléfono (#1E40AF primario)
+                Button(
+                    onClick = { showLoginDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mail,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Ingresar con correo o teléfono",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
             }
+        }
 
-            // Opción 2: Profesional / Oficio
+        // 3. Tarjeta de Registro Nueva Cuenta (con preselección de rol Vecino / Profesional)
+        item {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-                border = BorderStroke(
-                    width = 2.dp,
-                    color = if (selectedRole == "professional") PrimaryContainer else OutlineVariant
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedRole = "professional" }
+                border = BorderStroke(2.dp, SurfaceContainerHigh),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Text(
-                        text = "🛠️ Ofrezco mis servicios de oficio",
+                        text = "¿No tenés una cuenta todavía?",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = OnSurface,
+                        textAlign = TextAlign.Center
                     )
                     Text(
-                        text = "Quiero recibir solicitudes de vecinos de mi zona.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = OnSurfaceVariant
+                        text = "Creá tu perfil en 1 minuto como vecino o profesional.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = OnSurfaceVariant,
+                        textAlign = TextAlign.Center
                     )
+
+                    // Selector rápido de rol antes de ir al registro
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        StitchRoleChoicePill(
+                            title = "Vecino",
+                            subtitle = "Busco oficios",
+                            icon = Icons.Default.PersonSearch,
+                            selected = selectedRole == "client",
+                            onClick = { selectedRole = "client" },
+                            modifier = Modifier.weight(1f)
+                        )
+                        StitchRoleChoicePill(
+                            title = "Profesional",
+                            subtitle = "Ofrezco oficio",
+                            icon = Icons.Default.Handyman,
+                            selected = selectedRole == "professional",
+                            onClick = { selectedRole = "professional" },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Surface(
+                        onClick = { onNavigateToRegister(selectedRole) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = SurfaceContainerLow,
+                        border = BorderStroke(2.dp, PrimaryFixedDim),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "Registrarme gratis",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = PrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = PrimaryContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = { onContinueWithRole(selectedRole) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
+        // 4. Sello de Confianza Barrial (Verde Esmeralda Stitch)
+        item {
+            Surface(
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+                color = Color(0xFFE8F8ED),
+                border = BorderStroke(1.dp, SecondaryFixed),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Comenzar →", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VerifiedUser,
+                        contentDescription = null,
+                        tint = SecondaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Red vecinal protegida y verificada · Sin costos ocultos",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = OnSecondaryFixedVariant
+                    )
+                }
             }
-            TextButton(onClick = onLoginClick, modifier = Modifier.fillMaxWidth()) {
-                Text("¿Ya tenés una cuenta? Iniciar sesión", color = OnSurface)
+        }
+    }
+}
+
+@Composable
+private fun StitchRoleChoicePill(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bgColor = if (selected) SurfaceContainerLow else Surface
+    val borderColor = if (selected) PrimaryContainer else OutlineVariant
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = bgColor,
+        border = BorderStroke(if (selected) 2.dp else 1.dp, borderColor),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = if (selected) PrimaryContainer else OnSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (selected) Primary else OnSurface
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = OnSurfaceVariant
+                )
             }
         }
     }
 }
 
 // =============================================================================
-// PANTALLA 2 STITCH: registro_google_o_manual (Registro + Login Real JWT)
+// DIÁLOGO DE INICIO DE SESIÓN CON CORREO O TELÉFONO
+// =============================================================================
+@Composable
+fun LoginCredentialsDialog(
+    onDismiss: () -> Unit,
+    onSubmitLogin: (identifier: String, password: String) -> Unit,
+    onGoToRegister: () -> Unit
+) {
+    var identifier by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var localError by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceContainerLowest,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Ingresar a tu cuenta",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = OnSurface
+                )
+                Text(
+                    text = "Usá tu correo electrónico o teléfono celular registrado.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mail,
+                            contentDescription = null,
+                            tint = Primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Correo electrónico o teléfono",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
+                        )
+                    }
+                    OutlinedTextField(
+                        value = identifier,
+                        onValueChange = {
+                            identifier = it
+                            localError = null
+                        },
+                        placeholder = { Text("Ej. carlos@correo.com o 11 5544-3322") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Contraseña",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
+                        )
+                    }
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            localError = null
+                        },
+                        placeholder = { Text("Tu contraseña") },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (passwordVisible) "Ocultar contraseña" else "Ver contraseña",
+                                    tint = OnSurfaceVariant
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                if (localError != null) {
+                    Text(
+                        text = localError!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ErrorColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                TextButton(
+                    onClick = onGoToRegister,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Text(
+                        text = "¿Todavía no tenés cuenta? Registrate gratis",
+                        color = PrimaryContainer,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (identifier.trim().isBlank()) {
+                        localError = "Ingresá tu correo electrónico o número de teléfono"
+                        return@Button
+                    }
+                    if (password.isBlank()) {
+                        localError = "Ingresá tu contraseña"
+                        return@Button
+                    }
+                    onSubmitLogin(identifier.trim(), password)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.height(48.dp)
+            ) {
+                Text("Ingresar →", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar", color = OnSurfaceVariant)
+            }
+        }
+    )
+}
+
+// =============================================================================
+// PANTALLA 2 STITCH: registro_google_o_manual
+// Respeta 1:1 `registro_google_o_manual/code.html` y `screen.png`
 // =============================================================================
 @Composable
 fun RegisterAccountScreen(
     initialRole: String = "client",
     initialLoginMode: Boolean = false,
-    onContinueGoogle: (String) -> Unit,
+    onContinueGoogle: (email: String, fullName: String, role: String) -> Unit,
     onSubmitManual: (RegisterUserInputDto) -> Unit,
-    onSubmitLogin: (email: String, password: String) -> Unit = { _, _ -> },
+    onSubmitLogin: (emailOrPhone: String, password: String) -> Unit = { _, _ -> },
     onBack: () -> Unit
 ) {
     var isLoginMode by remember { mutableStateOf(initialLoginMode) }
@@ -161,149 +734,619 @@ fun RegisterAccountScreen(
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    var showGoogleDialog by remember { mutableStateOf(false) }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(SurfaceContainerLowest)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Text(
-                text = if (isLoginMode) "Ingresá a tu cuenta" else "Creá tu cuenta en Guía de Oficios",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Text(
-                text = "Conectate con vecinos y profesionales de confianza de tu barrio en pocos minutos.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurfaceVariant
-            )
-        }
-
-        item {
-            OutlinedButton(
-                onClick = { onContinueGoogle(role) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(2.dp, OutlineVariant)
-            ) {
-                Text("Continuar con Google", style = MaterialTheme.typography.labelLarge, color = OnSurface)
+    val googleAccountPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+            if (!accountName.isNullOrBlank()) {
+                val derivedName = accountName.substringBefore("@")
+                    .replace(".", " ")
+                    .replace("_", " ")
+                    .split(" ")
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
+                onContinueGoogle(accountName, derivedName.ifBlank { "Usuario Google" }, role)
+            } else {
+                showGoogleDialog = true
             }
+        } else {
+            showGoogleDialog = true
         }
+    }
 
-        if (!isLoginMode) {
+    val launchGoogleFlow: () -> Unit = {
+        runCatching {
+            val intent = AccountManager.newChooseAccountIntent(
+                null,
+                null,
+                arrayOf("com.google"),
+                null,
+                null,
+                null,
+                null
+            )
+            googleAccountPickerLauncher.launch(intent)
+        }.onFailure {
+            showGoogleDialog = true
+        }
+    }
+
+    if (showGoogleDialog) {
+        GoogleAccountInputDialog(
+            role = role,
+            onDismiss = { showGoogleDialog = false },
+            onConfirmAccount = { gEmail, gName, gRole ->
+                showGoogleDialog = false
+                onContinueGoogle(gEmail, gName, gRole)
+            }
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            // Sticky Header exacto a `registro_google_o_manual/code.html`
+            Surface(
+                color = SurfaceContainerLowest,
+                shadowElevation = 2.dp,
+                border = BorderStroke(1.dp, SurfaceContainerHigh)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Surface(
+                        onClick = onBack,
+                        shape = RoundedCornerShape(12.dp),
+                        color = SurfaceContainer,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver",
+                                tint = OnSurface
+                            )
+                        }
+                    }
+
+                    GdoBrandLogo(badgeSize = 36.dp)
+
+                    Spacer(modifier = Modifier.width(44.dp))
+                }
+            }
+        },
+        containerColor = Surface
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(top = 20.dp, bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // 1. Pill "Red Vecinal Segura" + Título y Subtítulo
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    FilterChip(
-                        selected = role == "client",
-                        onClick = { role = "client" },
-                        label = { Text("Busco oficios (Vecino)") },
-                        modifier = Modifier.weight(1f)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        color = SurfaceContainerLow,
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VerifiedUser,
+                                contentDescription = null,
+                                tint = PrimaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "RED VECINAL SEGURA",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryContainer
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = if (isLoginMode) "Ingresá a tu cuenta de Guía de Oficios" else "Creá tu cuenta en Guía de Oficios",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = OnSurface
                     )
-                    FilterChip(
-                        selected = role == "professional",
-                        onClick = { role = "professional" },
-                        label = { Text("Soy profesional") },
-                        modifier = Modifier.weight(1f)
+                    Text(
+                        text = if (isLoginMode)
+                            "Ingresá con tu cuenta de Google o con tu correo/teléfono y contraseña."
+                        else
+                            "Conectate con vecinos y profesionales de confianza de tu barrio en pocos minutos.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OnSurfaceVariant
                     )
                 }
             }
 
+            // 2. Botón Continuar con Google (56dp, ícono 4 colores)
             item {
-                OutlinedTextField(
-                    value = fullName,
-                    onValueChange = { fullName = it },
-                    label = { Text("Nombre y apellido completo") },
-                    placeholder = { Text("Ej. Carlos Alberto Gómez") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Teléfono celular con prefijo (Para coordinar trabajos)") },
-                    placeholder = { Text("Ej. 11 5544-3322 (para WhatsApp)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-            }
-        }
-
-        item {
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Correo electrónico") },
-                placeholder = { Text("Ej. maria.elena@correo.com") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
-        }
-
-        item {
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Contraseña") },
-                placeholder = { Text("Al menos 6 números o letras") },
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
-        }
-
-        item {
-            Button(
-                onClick = {
-                    if (isLoginMode) {
-                        onSubmitLogin(email.trim(), password)
-                    } else {
-                        onSubmitManual(
-                            RegisterUserInputDto(
-                                full_name = fullName.trim(),
-                                phone = phone.trim(),
-                                email = email.trim(),
-                                password = password,
-                                role = role
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        onClick = launchGoogleFlow,
+                        shape = RoundedCornerShape(12.dp),
+                        color = SurfaceContainerLowest,
+                        border = BorderStroke(2.dp, OutlineVariant),
+                        shadowElevation = 1.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            GoogleColorIcon(modifier = Modifier.size(22.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Continuar con Google",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = OnSurface
                             )
+                        }
+                    }
+                    Text(
+                        text = "Acceso rápido con un solo toque usando tu cuenta de Gmail",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = OnSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            // 3. Divisor "O completá tus datos a mano"
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalDivider(modifier = Modifier.weight(1f), color = OutlineVariant)
+                    Text(
+                        text = if (isLoginMode) "O INGRESÁ CON TUS DATOS" else "O COMPLETÁ TUS DATOS A MANO",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = OnSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    HorizontalDivider(modifier = Modifier.weight(1f), color = OutlineVariant)
+                }
+            }
+
+            // 4. Selector de Rol de 2 Columnas exacto a `registro_google_o_manual/code.html`
+            if (!isLoginMode) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Me registro como:",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            StitchRegisterRoleCard(
+                                title = "Busco oficios",
+                                subtitle = "Cliente / Vecino",
+                                icon = Icons.Default.PersonSearch,
+                                selected = role == "client",
+                                onClick = { role = "client" },
+                                modifier = Modifier.weight(1f)
+                            )
+                            StitchRegisterRoleCard(
+                                title = "Soy profesional",
+                                subtitle = "Electricista, etc.",
+                                icon = Icons.Default.Handyman,
+                                selected = role == "professional",
+                                onClick = { role = "professional" },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Campo 1: Nombre y apellido completo
+                item {
+                    StitchLabeledInputField(
+                        icon = Icons.Default.Person,
+                        label = "Nombre y apellido completo",
+                        value = fullName,
+                        onValueChange = {
+                            fullName = it
+                            validationError = null
+                        },
+                        placeholder = "Ej. Carlos Alberto Gómez"
+                    )
+                }
+
+                // Campo 2: Teléfono celular con prefijo + badge verde "Para coordinar trabajos"
+                item {
+                    StitchLabeledInputField(
+                        icon = Icons.Default.Call,
+                        label = "Teléfono celular con prefijo",
+                        badgeText = "Para coordinar trabajos",
+                        value = phone,
+                        onValueChange = {
+                            phone = it
+                            validationError = null
+                        },
+                        placeholder = "Ej. 11 5544-3322 (para WhatsApp)",
+                        keyboardType = KeyboardType.Phone
+                    )
+                }
+            }
+
+            // Campo 3: Correo electrónico (o teléfono si está en modo login)
+            item {
+                StitchLabeledInputField(
+                    icon = Icons.Default.Mail,
+                    label = if (isLoginMode) "Correo electrónico o teléfono" else "Correo electrónico",
+                    value = email,
+                    onValueChange = {
+                        email = it
+                        validationError = null
+                    },
+                    placeholder = if (isLoginMode) "Ej. carlos@correo.com o 11 5544-3322" else "Ej. carlos@correo.com",
+                    keyboardType = KeyboardType.Email
+                )
+            }
+
+            // Campo 4: Contraseña con botón de ojo funcional
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Contraseña",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
                         )
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
-            ) {
-                Text(
-                    text = if (isLoginMode) "Iniciar sesión →" else "Crear mi cuenta →",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = OnPrimary
-                )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            validationError = null
+                        },
+                        placeholder = { Text("Al menos 6 números o letras") },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (passwordVisible) "Ocultar contraseña" else "Mostrar contraseña",
+                                    tint = OnSurfaceVariant
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = SurfaceContainerLowest,
+                            unfocusedContainerColor = SurfaceContainerLowest,
+                            focusedBorderColor = PrimaryContainer,
+                            unfocusedBorderColor = OutlineVariant
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                    )
+                }
             }
-        }
 
-        item {
-            TextButton(
-                onClick = { isLoginMode = !isLoginMode },
-                modifier = Modifier.fillMaxWidth()
+            // Mensaje de validación local si falta algún dato
+            if (validationError != null) {
+                item {
+                    Surface(
+                        color = ErrorContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = validationError!!,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnErrorContainer,
+                            modifier = Modifier.padding(14.dp)
+                        )
+                    }
+                }
+            }
+
+            // Caja verde de privacidad (Exacta a `registro_google_o_manual/code.html`)
+            if (!isLoginMode) {
+                item {
+                    Surface(
+                        color = SecondaryFixed.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, SecondaryContainer.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VerifiedUser,
+                                contentDescription = null,
+                                tint = Secondary,
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Text(
+                                text = "Tus datos están protegidos. Solo compartimos tu teléfono cuando vos decidís contactar a un profesional o vecino.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OnSurface
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Botón Principal 56dp: "Crear mi cuenta →" / "Iniciar sesión →"
+            item {
+                Button(
+                    onClick = {
+                        if (isLoginMode) {
+                            if (email.trim().isBlank() || password.isBlank()) {
+                                validationError = "Completá tu correo/teléfono y tu contraseña para ingresar."
+                                return@Button
+                            }
+                            onSubmitLogin(email.trim(), password)
+                        } else {
+                            if (fullName.trim().length < 3) {
+                                validationError = "Ingresá tu nombre y apellido completo."
+                                return@Button
+                            }
+                            if (phone.trim().length < 6) {
+                                validationError = "Ingresá tu teléfono celular con prefijo para coordinar trabajos."
+                                return@Button
+                            }
+                            if (!email.trim().contains("@")) {
+                                validationError = "Ingresá un correo electrónico válido (ej. nombre@correo.com)."
+                                return@Button
+                            }
+                            if (password.trim().length < 6) {
+                                validationError = "La contraseña debe tener al menos 6 números o letras."
+                                return@Button
+                            }
+                            onSubmitManual(
+                                RegisterUserInputDto(
+                                    full_name = fullName.trim(),
+                                    phone = phone.trim(),
+                                    email = email.trim(),
+                                    password = password,
+                                    role = role
+                                )
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+                ) {
+                    Text(
+                        text = if (isLoginMode) "Iniciar sesión" else "Crear mi cuenta",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = Color.White
+                    )
+                }
+            }
+
+            // Footer: "¿Ya tenés una cuenta? Iniciar sesión"
+            item {
+                Surface(
+                    color = SurfaceContainerLow,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, OutlineVariant.copy(alpha = 0.6f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = if (isLoginMode) "¿Todavía no tenés una cuenta?" else "¿Ya tenés una cuenta?",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OnSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = {
+                                isLoginMode = !isLoginMode
+                                validationError = null
+                            }
+                        ) {
+                            Text(
+                                text = if (isLoginMode) "Crear mi cuenta gratis" else "Iniciar sesión",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = PrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StitchRegisterRoleCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bgColor = if (selected) SurfaceContainerLow else SurfaceContainerLowest
+    val borderColor = if (selected) PrimaryContainer else OutlineVariant
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = bgColor,
+        border = BorderStroke(2.dp, borderColor),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Radio circle indicator
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(if (selected) PrimaryContainer else Color.Transparent)
+                        .border(
+                            width = 2.dp,
+                            color = if (selected) PrimaryContainer else Outline,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (selected) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = if (selected) Primary else OnSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (selected) Primary else OnSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = OnSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StitchLabeledInputField(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    badgeText: String? = null,
+    keyboardType: KeyboardType = KeyboardType.Text
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Primary,
+                    modifier = Modifier.size(20.dp)
+                )
                 Text(
-                    text = if (isLoginMode) "¿No tenés cuenta? Crear una cuenta nueva" else "¿Ya tenés una cuenta? Iniciar sesión",
-                    color = Primary
+                    text = label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurface
+                )
+            }
+            if (!badgeText.isNullOrBlank()) {
+                Text(
+                    text = badgeText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Secondary
                 )
             }
         }
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(placeholder) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = SurfaceContainerLowest,
+                unfocusedContainerColor = SurfaceContainerLowest,
+                focusedBorderColor = PrimaryContainer,
+                unfocusedBorderColor = OutlineVariant
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+        )
     }
 }
 

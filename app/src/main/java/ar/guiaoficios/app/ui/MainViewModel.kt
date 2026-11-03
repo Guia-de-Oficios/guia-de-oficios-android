@@ -11,17 +11,20 @@ import ar.guiaoficios.app.data.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class GuiaUiState(
     val isLoading: Boolean = false,
     val statusMessage: String? = null,
+    val isSessionChecked: Boolean = false,
+    val isAuthenticated: Boolean = false,
     val currentUser: UserDto = UserDto(
-        id = "11111111-1111-1111-1111-111111111111",
-        full_name = "María Elena Castro",
-        email = "maria.elena@correo.com",
-        phone = "11 5544-3322",
+        id = "",
+        full_name = "",
+        email = "",
+        phone = "",
         role = "client",
         saved_address = "Av. Rivadavia 5420, Caballito"
     ),
@@ -54,22 +57,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        observeSavedSession()
+        restoreAndValidateSession()
         refreshInitialData()
     }
 
-    private fun observeSavedSession() {
+    private fun restoreAndValidateSession() {
         viewModelScope.launch {
             sessionManager.tokenFlow.collect {
                 // Mantiene cachedToken sincronizado con el AuthInterceptor
             }
         }
         viewModelScope.launch {
-            sessionManager.userFlow.collect { savedUser ->
-                if (savedUser != null) {
-                    _uiState.update { it.copy(currentUser = savedUser) }
+            val savedToken = sessionManager.tokenFlow.firstOrNull()
+            val savedUser = sessionManager.userFlow.firstOrNull()
+            if (!savedToken.isNullOrBlank() && savedUser != null) {
+                try {
+                    val freshUser = api.getCurrentUser()
+                    sessionManager.updateSavedUser(freshUser)
+                    _uiState.update {
+                        it.copy(
+                            currentUser = freshUser,
+                            isAuthenticated = true,
+                            isSessionChecked = true
+                        )
+                    }
+                } catch (_: Exception) {
+                    sessionManager.clearSession()
+                    _uiState.update {
+                        it.copy(
+                            currentUser = UserDto(id = "", full_name = "", email = ""),
+                            isAuthenticated = false,
+                            isSessionChecked = true
+                        )
+                    }
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isAuthenticated = false,
+                        isSessionChecked = true
+                    )
                 }
             }
+        }
+    }
+
+    fun logout(onLoggedOut: () -> Unit = {}) {
+        viewModelScope.launch {
+            sessionManager.clearSession()
+            _uiState.update {
+                it.copy(
+                    isAuthenticated = false,
+                    currentUser = UserDto(id = "", full_name = "", email = ""),
+                    statusMessage = "Sesión cerrada correctamente"
+                )
+            }
+            onLoggedOut()
         }
     }
 
@@ -100,8 +143,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun showStatusMessage(msg: String) {
+        _uiState.update { it.copy(statusMessage = msg) }
+    }
+
     fun clearMessage() {
         _uiState.update { it.copy(statusMessage = null) }
+    }
+
+    private fun extractApiErrorMessage(e: Exception, fallbackPrefix: String): String {
+        if (e is retrofit2.HttpException) {
+            val rawBody = runCatching { e.response()?.errorBody()?.string() }.getOrNull().orEmpty()
+            val match = Regex(""""error"\s*:\s*"([^"]+)"""").find(rawBody)
+            if (match != null) {
+                return match.groupValues[1]
+            }
+        }
+        return "$fallbackPrefix: ${e.localizedMessage ?: "Error desconocido"}"
     }
 
     fun registerManual(input: RegisterUserInputDto, onSuccess: (UserDto) -> Unit) {
@@ -113,6 +171,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isAuthenticated = true,
                         currentUser = authRes.user,
                         statusMessage = "¡Cuenta creada con éxito, ${authRes.user.full_name.substringBefore(" ")}!"
                     )
@@ -122,24 +181,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        statusMessage = "No se pudo registrar la cuenta: ${e.localizedMessage}"
+                        statusMessage = extractApiErrorMessage(e, "No se pudo registrar la cuenta")
                     )
                 }
             }
         }
     }
 
-    fun loginWithEmail(email: String, password: String, onSuccess: (UserDto) -> Unit) {
+    fun loginWithEmail(emailOrPhone: String, password: String, onSuccess: (UserDto) -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, statusMessage = null) }
             try {
-                val authRes = api.loginUser(LoginInputDto(email = email, password = password))
+                val authRes = api.loginUser(LoginInputDto(email = emailOrPhone.trim(), password = password))
                 sessionManager.saveAuthSession(authRes.token, authRes.user)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isAuthenticated = true,
                         currentUser = authRes.user,
-                        statusMessage = "¡Bienvenido/a nuevamente, ${authRes.user.full_name.substringBefore(" ")}!"
+                        statusMessage = "¡Hola de nuevo, ${authRes.user.full_name.substringBefore(" ")}!"
                     )
                 }
                 onSuccess(authRes.user)
@@ -147,23 +207,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        statusMessage = "Credenciales inválidas o error de conexión: ${e.localizedMessage}"
+                        statusMessage = extractApiErrorMessage(e, "No se pudo iniciar sesión")
                     )
                 }
             }
         }
     }
 
-    fun authenticateWithGoogle(role: String, onSuccess: (UserDto) -> Unit) {
+    fun authenticateWithGoogle(
+        email: String,
+        fullName: String,
+        role: String,
+        phone: String = "",
+        idToken: String = "",
+        onSuccess: (UserDto) -> Unit
+    ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, statusMessage = null) }
             try {
-                val isPro = role == "professional"
                 val googleInput = GoogleAuthInputDto(
-                    id_token = "google-oauth-token-${System.currentTimeMillis()}",
-                    email = if (isPro) "roberto.gomez@oficios.com" else "maria.elena@correo.com",
-                    full_name = if (isPro) "Roberto Carlos Gómez" else "María Elena Castro",
-                    phone = if (isPro) "11 4567-8901" else "11 5544-3322",
+                    id_token = idToken.ifBlank { "google-android-account-${System.currentTimeMillis()}" },
+                    email = email.trim(),
+                    full_name = fullName.trim(),
+                    phone = phone.trim(),
                     role = role
                 )
                 val authRes = api.googleAuth(googleInput)
@@ -171,6 +237,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isAuthenticated = true,
                         currentUser = authRes.user,
                         statusMessage = "Sesión iniciada con Google (${authRes.user.email})"
                     )
@@ -180,7 +247,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        statusMessage = "Error en autenticación con Google: ${e.localizedMessage}"
+                        statusMessage = extractApiErrorMessage(e, "Error en autenticación con Google")
                     )
                 }
             }
