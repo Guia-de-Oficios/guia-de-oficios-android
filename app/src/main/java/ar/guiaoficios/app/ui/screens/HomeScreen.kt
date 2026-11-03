@@ -6,35 +6,150 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import ar.guiaoficios.app.data.model.CategoryDto
+import ar.guiaoficios.app.data.model.DiagnosticSuggestionResponseDto
 import ar.guiaoficios.app.ui.theme.*
 
 /**
  * Pantalla 3 de Stitch: `cliente_inicio_y_categor_as`
- * Respeta fielmente la gráfica generada con Stitch:
- * - Saludo "¡Hola, María!" + Pill "Vecina activa" + "Av. Rivadavia 5420, Caballito" + Botón "Cambiar dirección" (56dp)
- * - Buscador "¿Qué necesitás solucionar hoy?" ("Ej. Pierde agua la canilla")
- * - Tarjeta de asistencia "¿No sabés qué profesional necesitás?" con botón "¿Qué está pasando?"
+ * Respeta fielmente la gráfica generada con Stitch y conecta con la API real:
+ * - Saludo "¡Hola, María!" + Pill "Vecina activa" + Dirección guardada + "Cambiar dirección" (PATCH /api/v1/users/me/address)
+ * - Buscador "¿Qué necesitás solucionar hoy?" (GET /api/v1/professionals?q=...)
+ * - Tarjeta de asistencia "¿No sabés qué profesional necesitás?" (POST /api/v1/diagnostic)
  * - Grilla de 2 columnas de oficios con badges ("Matriculados" en Gasista y "Urgencias" en Cerrajero)
- * - Franja de garantía vecinal y BottomNavBar de 4 pestañas (Inicio, Mis contactos, Ayuda, Mi cuenta)
  */
 @Composable
 fun HomeScreen(
     userName: String = "María",
     savedAddress: String = "Av. Rivadavia 5420, Caballito",
     categories: List<CategoryDto>,
+    diagnosticResult: DiagnosticSuggestionResponseDto? = null,
     onSelectCategory: (CategoryDto) -> Unit,
-    onOpenDiagnosticHelp: () -> Unit,
-    onChangeAddress: () -> Unit
+    onSearchByQuery: (String) -> Unit = {},
+    onRequestDiagnostic: (String) -> Unit = {},
+    onUpdateAddress: (String) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var showAddressDialog by remember { mutableStateOf(false) }
+    var showDiagnosticDialog by remember { mutableStateOf(false) }
+    var addressDraft by remember(savedAddress) { mutableStateOf(savedAddress) }
+    var problemDraft by remember { mutableStateOf("No enciende el calefón de la cocina") }
+
+    if (showAddressDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddressDialog = false },
+            title = { Text("Cambiar tu dirección en el barrio", style = MaterialTheme.typography.titleLarge) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Ingresá tu calle, altura y barrio para ordenar los profesionales más cercanos con PostGIS:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OnSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = addressDraft,
+                        onValueChange = { addressDraft = it },
+                        label = { Text("Dirección y barrio") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (addressDraft.isNotBlank()) {
+                            onUpdateAddress(addressDraft.trim())
+                        }
+                        showAddressDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+                ) {
+                    Text("Guardar dirección")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddressDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (showDiagnosticDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiagnosticDialog = false },
+            title = { Text("¿Qué está pasando en tu casa?", style = MaterialTheme.typography.titleLarge) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Describí con tus palabras el inconveniente y te sugerimos qué oficio corresponde:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OnSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = problemDraft,
+                        onValueChange = { problemDraft = it },
+                        label = { Text("Tu problema") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2
+                    )
+                    Button(
+                        onClick = { onRequestDiagnostic(problemDraft) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+                    ) {
+                        Text("Consultar oficio recomendado")
+                    }
+
+                    if (diagnosticResult != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SecondaryFixed.copy(alpha = 0.4f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "Recomendación: ${diagnosticResult.suggested_category.name}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = OnSecondaryFixedVariant
+                                )
+                                Text(
+                                    text = diagnosticResult.explanation,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Button(
+                                    onClick = {
+                                        showDiagnosticDialog = false
+                                        onSelectCategory(diagnosticResult.suggested_category)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Secondary)
+                                ) {
+                                    Text("Ver ${diagnosticResult.suggested_category.name}s cerca →")
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDiagnosticDialog = false }) {
+                    Text("Cerrar")
+                }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -62,7 +177,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "¡Hola, $userName!",
+                            text = "¡Hola, ${userName.substringBefore(" ")}!",
                             style = MaterialTheme.typography.headlineMedium
                         )
                         Surface(
@@ -94,7 +209,7 @@ fun HomeScreen(
                     }
 
                     OutlinedButton(
-                        onClick = onChangeAddress,
+                        onClick = { showAddressDialog = true },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
@@ -131,7 +246,22 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .heightIn(min = 56.dp),
                     shape = RoundedCornerShape(12.dp),
-                    singleLine = true
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            if (searchQuery.isNotBlank()) {
+                                onSearchByQuery(searchQuery.trim())
+                            }
+                        }
+                    ),
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            TextButton(onClick = { onSearchByQuery(searchQuery.trim()) }) {
+                                Text("Buscar", fontWeight = FontWeight.Bold, color = Primary)
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -158,7 +288,7 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
-                        onClick = onOpenDiagnosticHelp,
+                        onClick = { showDiagnosticDialog = true },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),

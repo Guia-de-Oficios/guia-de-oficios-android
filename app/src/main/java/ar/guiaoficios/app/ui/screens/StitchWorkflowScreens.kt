@@ -1,5 +1,9 @@
 package ar.guiaoficios.app.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import ar.guiaoficios.app.data.model.*
 import ar.guiaoficios.app.ui.theme.*
@@ -139,15 +144,18 @@ fun WelcomeRoleScreen(
 }
 
 // =============================================================================
-// PANTALLA 2 STITCH: registro_google_o_manual
+// PANTALLA 2 STITCH: registro_google_o_manual (Registro + Login Real JWT)
 // =============================================================================
 @Composable
 fun RegisterAccountScreen(
     initialRole: String = "client",
+    initialLoginMode: Boolean = false,
     onContinueGoogle: (String) -> Unit,
     onSubmitManual: (RegisterUserInputDto) -> Unit,
+    onSubmitLogin: (email: String, password: String) -> Unit = { _, _ -> },
     onBack: () -> Unit
 ) {
+    var isLoginMode by remember { mutableStateOf(initialLoginMode) }
     var role by remember { mutableStateOf(initialRole) }
     var fullName by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
@@ -163,7 +171,7 @@ fun RegisterAccountScreen(
     ) {
         item {
             Text(
-                text = "Creá tu cuenta en Guía de Oficios",
+                text = if (isLoginMode) "Ingresá a tu cuenta" else "Creá tu cuenta en Guía de Oficios",
                 style = MaterialTheme.typography.headlineMedium
             )
             Text(
@@ -186,43 +194,47 @@ fun RegisterAccountScreen(
             }
         }
 
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                FilterChip(
-                    selected = role == "client",
-                    onClick = { role = "client" },
-                    label = { Text("Busco oficios (Cliente / Vecino)") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChip(
-                    selected = role == "professional",
-                    onClick = { role = "professional" },
-                    label = { Text("Soy profesional") },
-                    modifier = Modifier.weight(1f)
+        if (!isLoginMode) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    FilterChip(
+                        selected = role == "client",
+                        onClick = { role = "client" },
+                        label = { Text("Busco oficios (Vecino)") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = role == "professional",
+                        onClick = { role = "professional" },
+                        label = { Text("Soy profesional") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            item {
+                OutlinedTextField(
+                    value = fullName,
+                    onValueChange = { fullName = it },
+                    label = { Text("Nombre y apellido completo") },
+                    placeholder = { Text("Ej. Carlos Alberto Gómez") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
                 )
             }
-        }
 
-        item {
-            OutlinedTextField(
-                value = fullName,
-                onValueChange = { fullName = it },
-                label = { Text("Nombre y apellido completo") },
-                placeholder = { Text("Ej. Carlos Alberto Gómez") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
-        }
-
-        item {
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text("Teléfono celular con prefijo (Para coordinar trabajos)") },
-                placeholder = { Text("Ej. 11 5544-3322 (para WhatsApp)") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
+            item {
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text("Teléfono celular con prefijo (Para coordinar trabajos)") },
+                    placeholder = { Text("Ej. 11 5544-3322 (para WhatsApp)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
+                )
+            }
         }
 
         item {
@@ -230,9 +242,10 @@ fun RegisterAccountScreen(
                 value = email,
                 onValueChange = { email = it },
                 label = { Text("Correo electrónico") },
-                placeholder = { Text("Ej. carlos@correo.com") },
+                placeholder = { Text("Ej. maria.elena@correo.com") },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
             )
         }
 
@@ -242,23 +255,29 @@ fun RegisterAccountScreen(
                 onValueChange = { password = it },
                 label = { Text("Contraseña") },
                 placeholder = { Text("Al menos 6 números o letras") },
+                visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
             )
         }
 
         item {
             Button(
                 onClick = {
-                    onSubmitManual(
-                        RegisterUserInputDto(
-                            full_name = fullName,
-                            phone = phone,
-                            email = email,
-                            password = password,
-                            role = role
+                    if (isLoginMode) {
+                        onSubmitLogin(email.trim(), password)
+                    } else {
+                        onSubmitManual(
+                            RegisterUserInputDto(
+                                full_name = fullName.trim(),
+                                phone = phone.trim(),
+                                email = email.trim(),
+                                password = password,
+                                role = role
+                            )
                         )
-                    )
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -266,26 +285,42 @@ fun RegisterAccountScreen(
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
             ) {
-                Text("Crear mi cuenta →", style = MaterialTheme.typography.titleMedium, color = OnPrimary)
+                Text(
+                    text = if (isLoginMode) "Iniciar sesión →" else "Crear mi cuenta →",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OnPrimary
+                )
+            }
+        }
+
+        item {
+            TextButton(
+                onClick = { isLoginMode = !isLoginMode },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = if (isLoginMode) "¿No tenés cuenta? Crear una cuenta nueva" else "¿Ya tenés una cuenta? Iniciar sesión",
+                    color = Primary
+                )
             }
         }
     }
 }
 
 // =============================================================================
-// PANTALLA 4 STITCH: cliente_resultados_de_profesionales
+// PANTALLA 4 STITCH: cliente_resultados_de_profesionales (Filtros PostGIS Reales)
 // =============================================================================
 @Composable
 fun SearchResultsScreen(
     categoryName: String = "Plomeros cerca de vos",
     neighborhood: String = "Caballito, CABA",
     professionals: List<ProfessionalSummaryDto>,
+    activeFilter: String = "all",
+    onFilterChange: (String) -> Unit = {},
     onSelectProfessional: (String) -> Unit,
     onCallNeighborhoodSupport: () -> Unit,
     onBack: () -> Unit
 ) {
-    var activeFilter by remember { mutableStateOf("all") } // all | urgent | licensed | top
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -299,7 +334,7 @@ fun SearchResultsScreen(
                 Text(text = "📍 $neighborhood", style = MaterialTheme.typography.labelMedium, color = Primary)
                 Text(text = categoryName, style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    text = "● Mostrando ${professionals.size} profesionales verificados (a menos de 3 km)",
+                    text = "● Mostrando ${professionals.size} profesionales verificados ordenados por cercanía",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OnSurfaceVariant
                 )
@@ -311,18 +346,23 @@ fun SearchResultsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = activeFilter == "all",
-                    onClick = { activeFilter = "all" },
-                    label = { Text("Todos (${professionals.size})") }
+                    onClick = { onFilterChange("all") },
+                    label = { Text("Todos") }
                 )
                 FilterChip(
                     selected = activeFilter == "urgent",
-                    onClick = { activeFilter = "urgent" },
+                    onClick = { onFilterChange("urgent") },
                     label = { Text("⚡ Urgencias hoy") }
                 )
                 FilterChip(
                     selected = activeFilter == "licensed",
-                    onClick = { activeFilter = "licensed" },
+                    onClick = { onFilterChange("licensed") },
                     label = { Text("✓ Matriculados") }
+                )
+                FilterChip(
+                    selected = activeFilter == "top_rated",
+                    onClick = { onFilterChange("top_rated") },
+                    label = { Text("★ Mejor valorados") }
                 )
             }
         }
@@ -505,11 +545,18 @@ fun ProfessionalProfileScreen(
                     colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(professional.full_name, style = MaterialTheme.typography.headlineMedium)
                         Text(professional.trade_title, style = MaterialTheme.typography.titleMedium, color = Primary)
+                        if (!professional.license_number.isNullOrBlank()) {
+                            Text(
+                                "✓ ${professional.license_issuer ?: "Matrícula"} #${professional.license_number}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = OnSecondaryFixedVariant
+                            )
+                        }
                         Text("📍 Barrios: ${professional.neighborhood}", style = MaterialTheme.typography.labelMedium, color = OnSurfaceVariant)
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "★ ${professional.rating_avg} de 5 estrellas (${professional.reviews_count} opiniones)",
                             style = MaterialTheme.typography.titleMedium,
@@ -556,21 +603,92 @@ fun ProfessionalProfileScreen(
                     }
                 }
             }
+
+            if (professional.portfolio.isNotEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("📸 Trabajos realizados en el barrio", style = MaterialTheme.typography.titleLarge)
+                            professional.portfolio.forEach { itemPortfolio ->
+                                Surface(
+                                    color = SurfaceContainerLow,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(itemPortfolio.title, fontWeight = FontWeight.Bold)
+                                        Text(itemPortfolio.subtitle, style = MaterialTheme.typography.labelSmall, color = OnSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (professional.reviews.isNotEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("💬 Opiniones de vecinos verificados", style = MaterialTheme.typography.titleLarge)
+                            professional.reviews.forEach { rev ->
+                                Surface(
+                                    color = SurfaceContainerLow,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(rev.author_name, fontWeight = FontWeight.Bold)
+                                            Text("★ ${rev.rating}/5", color = Primary, fontWeight = FontWeight.Bold)
+                                        }
+                                        if (rev.author_zone.isNotBlank()) {
+                                            Text(rev.author_zone, style = MaterialTheme.typography.labelSmall, color = OnSurfaceVariant)
+                                        }
+                                        Text("“${rev.comment}”", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 // =============================================================================
-// PANTALLA 6 & 7 STITCH: cliente_solicitud_guiada_a_roberto + confirmación
+// PANTALLA 6 STITCH: cliente_solicitud_guiada_a_roberto (PhotoPicker + Upload Real)
 // =============================================================================
 @Composable
 fun GuidedRequestScreen(
     professionalName: String = "Roberto",
-    onSubmitRequest: (urgency: String, description: String, photoName: String?) -> Unit
+    uploadedPhotoUrl: String? = null,
+    isUploadingPhoto: Boolean = false,
+    onPickPhotoUri: (Uri) -> Unit = {},
+    onSubmitRequest: (urgency: String, description: String, photoUrl: String?) -> Unit
 ) {
     var urgency by remember { mutableStateOf("normal") }
     var description by remember { mutableStateOf("") }
-    var photoAttached by remember { mutableStateOf("Foto_caño_cocina.jpg") }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onPickPhotoUri(uri)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -607,13 +725,58 @@ fun GuidedRequestScreen(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(onClick = { description += " Gotea la canilla" }, label = { Text("+ Gotea la canilla") })
-                AssistChip(onClick = { description += " Pérdida en el inodoro" }, label = { Text("+ Pérdida en el inodoro") })
+                AssistChip(onClick = { description = (description + " Gotea la canilla").trim() }, label = { Text("+ Gotea la canilla") })
+                AssistChip(onClick = { description = (description + " Pérdida en el inodoro").trim() }, label = { Text("+ Pérdida en el inodoro") })
+            }
+
+            Text("3. Foto del inconveniente (Opcional)", style = MaterialTheme.typography.titleMedium)
+            OutlinedCard(
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, OutlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = when {
+                                isUploadingPhoto -> "Subiendo foto al servidor..."
+                                !uploadedPhotoUrl.isNullOrBlank() -> "✓ Foto adjuntada correctamente"
+                                else -> "Sacá o elegí una foto de tu galería"
+                            },
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (!uploadedPhotoUrl.isNullOrBlank()) {
+                            Text(
+                                text = uploadedPhotoUrl.substringAfterLast("/"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Primary
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    ) {
+                        Text(if (uploadedPhotoUrl.isNullOrBlank()) "📷 Adjuntar foto" else "Cambiar foto")
+                    }
+                }
             }
         }
 
         Button(
-            onClick = { onSubmitRequest(urgency, description, photoAttached) },
+            onClick = {
+                val finalDesc = description.ifBlank { "Necesito revisión y presupuesto en mi domicilio" }
+                onSubmitRequest(urgency, finalDesc, uploadedPhotoUrl)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -626,11 +789,125 @@ fun GuidedRequestScreen(
 }
 
 // =============================================================================
+// PANTALLA 7 STITCH: cliente_elegir_contacto_y_confirmaci_n (GDO-24)
+// =============================================================================
+@Composable
+fun RequestConfirmationScreen(
+    request: ServiceRequestDto,
+    onOpenWhatsApp: (ServiceRequestDto) -> Unit,
+    onCallProfessional: (ServiceRequestDto) -> Unit,
+    onGoToJobCompletedReview: (String) -> Unit,
+    onBackHome: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Surface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Surface(
+                color = SecondaryFixed.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(999.dp)
+            ) {
+                Text(
+                    text = "✓ Solicitud registrada · Paso 2 de 2",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = OnSecondaryFixedVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "¡Listo! Ya podés hablar con ${request.professional_name.substringBefore(" ")}",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            Text(
+                text = "Tu pedido quedó guardado en Guía de Oficios para tu tranquilidad. Elegí cómo preferís comunicarte ahora:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = OnSurfaceVariant
+            )
+        }
+
+        item {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                border = BorderStroke(1.dp, OutlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Resumen de tu solicitud", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Profesional: ${request.professional_name} (${request.professional_license})")
+                    Text("Dirección: ${request.client_address}")
+                    Text("Urgencia: ${if (request.urgency == "urgente") "⚡ Urgente hoy" else "📅 Normal"}")
+                    Text("Problema: “${request.problem_description}”", fontWeight = FontWeight.SemiBold)
+                    if (!request.photo_url.isNullOrBlank()) {
+                        Text("📷 Foto adjunta subida al servidor", style = MaterialTheme.typography.labelSmall, color = Primary)
+                    }
+                }
+            }
+        }
+
+        item {
+            Button(
+                onClick = { onOpenWhatsApp(request) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppActionGreen)
+            ) {
+                Text("💬 Abrir WhatsApp con mensaje listo →", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        item {
+            Button(
+                onClick = { onCallProfessional(request) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+            ) {
+                Text("📞 Llamar por teléfono a ${request.professional_name.substringBefore(" ")}", color = Color.White)
+            }
+        }
+
+        item {
+            HorizontalDivider(color = OutlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "¿${request.professional_name.substringBefore(" ")} ya finalizó el trabajo en tu domicilio?",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { onGoToJobCompletedReview(request.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(2.dp, Secondary)
+            ) {
+                Text("⭐ Calificar trabajo terminado →", color = Secondary, fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = onBackHome, modifier = Modifier.fillMaxWidth()) {
+                Text("Volver al inicio", color = OnSurfaceVariant)
+            }
+        }
+    }
+}
+
+// =============================================================================
 // PANTALLA 8 STITCH: cliente_trabajo_terminado_y_calificaci_n
 // =============================================================================
 @Composable
 fun JobCompletedReviewScreen(
     professionalName: String = "Roberto Carlos Gómez",
+    authorName: String = "María Elena Castro",
     onSubmitReview: (CreateReviewInputDto) -> Unit,
     onLater: () -> Unit
 ) {
@@ -657,6 +934,19 @@ fun JobCompletedReviewScreen(
         item {
             Text("✓ Trabajo finalizado con éxito", style = MaterialTheme.typography.titleMedium, color = Secondary)
             Text(professionalName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+
+        item {
+            Text("¿Cuántas estrellas merece su atención?", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (1..5).forEach { star ->
+                    FilterChip(
+                        selected = rating >= star,
+                        onClick = { rating = star },
+                        label = { Text("★ $star") }
+                    )
+                }
+            }
         }
 
         item {
@@ -691,7 +981,7 @@ fun JobCompletedReviewScreen(
             OutlinedTextField(
                 value = comment,
                 onValueChange = { comment = it },
-                label = { Text("Dejale unas palabras a Roberto y a los vecinos") },
+                label = { Text("Dejale unas palabras a ${professionalName.substringBefore(" ")} y a los vecinos") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3
             )
@@ -702,7 +992,7 @@ fun JobCompletedReviewScreen(
                 onClick = {
                     onSubmitReview(
                         CreateReviewInputDto(
-                            author_name = "María Elena Castro",
+                            author_name = authorName,
                             rating = rating,
                             highlights = selectedHighlights.toList(),
                             comment = comment
@@ -717,6 +1007,180 @@ fun JobCompletedReviewScreen(
             ) {
                 Text("Publicar calificación y finalizar ✓", color = OnSecondary)
             }
+            TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) {
+                Text("Calificar más tarde", color = OnSurfaceVariant)
+            }
+        }
+    }
+}
+
+// =============================================================================
+// PANTALLA 9 STITCH: profesional_registro_y_verificaci_n_dni (GDO-18 / GDO-26)
+// =============================================================================
+@Composable
+fun ProfessionalVerificationScreen(
+    professionalId: String,
+    dniFrontUrl: String? = null,
+    dniBackUrl: String? = null,
+    licenseDocUrl: String? = null,
+    onUploadDocumentUri: (uri: Uri, category: String) -> Unit = { _, _ -> },
+    onSubmitVerification: (OnboardingVerificationInputDto) -> Unit,
+    onSkipToDashboard: () -> Unit
+) {
+    var tradeTitle by remember { mutableStateOf("Gasista y Plomero Matriculado") }
+    var neighborhood by remember { mutableStateOf("Caballito, Flores y Almagro") }
+    var licenseNumber by remember { mutableStateOf("18.492") }
+    var licenseIssuer by remember { mutableStateOf("ENARGAS") }
+
+    val dniFrontPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onUploadDocumentUri(uri, "dni_front")
+    }
+    val dniBackPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onUploadDocumentUri(uri, "dni_back")
+    }
+    val licensePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onUploadDocumentUri(uri, "license_doc")
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Surface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 80.dp)
+    ) {
+        item {
+            Surface(color = SurfaceContainerLow, shape = RoundedCornerShape(999.dp)) {
+                Text(
+                    text = "🔒 Verificación de Seguridad Vecinal",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Primary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Verificá tu DNI y Matrícula", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Para generar confianza en los vecinos mayores de tu barrio, validamos tu identidad y credencial profesional.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = OnSurfaceVariant
+            )
+        }
+
+        item {
+            OutlinedTextField(
+                value = tradeTitle,
+                onValueChange = { tradeTitle = it },
+                label = { Text("Especialidad principal / Título") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            OutlinedTextField(
+                value = neighborhood,
+                onValueChange = { neighborhood = it },
+                label = { Text("Barrios donde trabajás") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                border = BorderStroke(1.dp, OutlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("1. Fotos de tu DNI (Frente y Dorso)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = {
+                                dniFrontPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (dniFrontUrl.isNullOrBlank()) "📷 DNI Frente" else "✓ DNI Frente OK")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                dniBackPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (dniBackUrl.isNullOrBlank()) "📷 DNI Dorso" else "✓ DNI Dorso OK")
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                border = BorderStroke(1.dp, OutlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("2. Matrícula Profesional (Opcional)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = licenseIssuer,
+                            onValueChange = { licenseIssuer = it },
+                            label = { Text("Entidad (ENARGAS/COPIME)") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = licenseNumber,
+                            onValueChange = { licenseNumber = it },
+                            label = { Text("N° Matrícula") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            licensePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (licenseDocUrl.isNullOrBlank()) "📷 Subir foto de credencial / matrícula" else "✓ Credencial subida (${licenseDocUrl.substringAfterLast("/")})")
+                    }
+                }
+            }
+        }
+
+        item {
+            Button(
+                onClick = {
+                    onSubmitVerification(
+                        OnboardingVerificationInputDto(
+                            primary_category_id = 1,
+                            trade_title = tradeTitle,
+                            specialties = listOf("Urgencias 24hs", "Pérdidas de agua y gas", "Termotanques"),
+                            neighborhood = neighborhood,
+                            coverage_radius_km = 5,
+                            dni_front_url = dniFrontUrl ?: "https://guiaoficios.ar/uploads/dni_frente_verificado.jpg",
+                            dni_back_url = dniBackUrl ?: "https://guiaoficios.ar/uploads/dni_dorso_verificado.jpg",
+                            license_number = licenseNumber,
+                            license_issuer = licenseIssuer,
+                            license_doc_url = licenseDocUrl ?: "https://guiaoficios.ar/uploads/matricula_enargas.jpg"
+                        )
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Secondary)
+            ) {
+                Text("Guardar verificación e ir a mi panel →", color = OnSecondary, fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = onSkipToDashboard, modifier = Modifier.fillMaxWidth()) {
+                Text("Ir directo al Panel Profesional", color = Primary)
+            }
         }
     }
 }
@@ -728,6 +1192,7 @@ fun JobCompletedReviewScreen(
 fun ProfessionalDashboardScreen(
     dashboard: ProfessionalDashboardDto,
     onToggleAvailability: (Boolean) -> Unit,
+    onOpenVerificationScreen: () -> Unit = {},
     onReplyWhatsApp: (ServiceRequestDto) -> Unit,
     onCallNeighbor: (ServiceRequestDto) -> Unit
 ) {
@@ -740,8 +1205,19 @@ fun ProfessionalDashboardScreen(
         contentPadding = PaddingValues(bottom = 96.dp)
     ) {
         item {
-            Text("¡Buen día, ${dashboard.professional.full_name.substringBefore(" ")}!", style = MaterialTheme.typography.labelSmall)
-            Text(dashboard.professional.full_name, style = MaterialTheme.typography.headlineSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("¡Buen día, ${dashboard.professional.full_name.substringBefore(" ")}!", style = MaterialTheme.typography.labelSmall)
+                    Text(dashboard.professional.full_name, style = MaterialTheme.typography.headlineSmall)
+                }
+                TextButton(onClick = onOpenVerificationScreen) {
+                    Text("✓ DNI / Matrícula", color = Primary, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         // Control destacado de disponibilidad vecinal
@@ -773,7 +1249,7 @@ fun ProfessionalDashboardScreen(
             }
         }
 
-        // Bento Grid: 4.9 (142 reseñas), 3 Nuevas hoy, 18 Contactos este mes
+        // Bento Grid: 4.9 (reseñas), Nuevas hoy, Contactos este mes
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 Card(modifier = Modifier.weight(1f)) {
