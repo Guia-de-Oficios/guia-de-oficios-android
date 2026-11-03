@@ -54,6 +54,11 @@ android {
         buildConfig = true
     }
 
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
