@@ -8,23 +8,33 @@ Repositorio oficial de la aplicación móvil Android para **Guía de Oficios**, 
 
 ---
 
-## 📚 Plan de Etapas Funcionales y Documentación en `/docs`
-1. 🚀 **[`docs/06_plan_etapas_funcionales_y_tareas.md`](docs/06_plan_etapas_funcionales_y_tareas.md)**: **[HOJA DE RUTA DEL EQUIPO]** Detalle de las **4 Etapas Funcionales**, lo que ya está terminado en la **Etapa 1** y las tareas paso a paso para continuar con las **Etapas 2, 3 y 4**.
+## 📚 Plan de Ejecución y Documentación en `/docs`
+1. 🚀 **[`docs/06_radiografia_vistas_y_plan_paso_a_paso.md`](docs/06_radiografia_vistas_y_plan_paso_a_paso.md)**: **[HOJA DE RUTA DEL EQUIPO]** Radiografía completa de las 15 vistas, auditoría del esqueleto base, guía de ejecución local y checklist de los **14 Pasos Secuenciales** (ramas `feat/paso-XX-...`).
 2. [`docs/01_especificacion_mvp_y_evolutivos.md`](docs/01_especificacion_mvp_y_evolutivos.md): Especificación funcional del MVP y endpoints REST.
 3. [`docs/02_guia_ux_ui_accesible.md`](docs/02_guia_ux_ui_accesible.md): Paleta de colores, tipografía y reglas de accesibilidad (`WCAG AAA`, botones de `56.dp`).
-4. [`docs/03_trabajo_colaborativo_y_onboarding.md`](docs/03_trabajo_colaborativo_y_onboarding.md): Organización del trabajo en equipo entre Android Studio y Docker.
+4. [`docs/03_trabajo_colaborativo_y_onboarding.md`](docs/03_trabajo_colaborativo_y_onboarding.md): Organización del trabajo en equipo entre Android Studio y Docker, modularización y ramas.
 5. [`docs/04_vision_negocio_y_estrategia.md`](docs/04_vision_negocio_y_estrategia.md): Visión de producto y evolutivos de monetización.
 
 ---
 
-## 🗺️ Estado de las 4 Etapas Funcionales en Android
+## 🗺️ Mapa de los 14 Pasos de Trabajo en Android
 
-| Etapa | Pantallas / Componentes | Estado |
-| :--- | :--- | :---: |
-| **Etapa 1** | • `StitchBrandComponents.kt` (`GdoBrandLogo`, `GoogleColorIcon`, `StitchTopAppBar`, `StitchBottomNavBar`)<br>• `WelcomeRoleScreen` (`bienvenida_y_selecci_n_de_rol`)<br>• `RegisterAccountScreen` (`registro_google_o_manual`)<br>• `HomeScreen` (`cliente_inicio_y_categor_as`) + `UserAccountScreen` (`Mi cuenta` y Cerrar sesión)<br>• Sesión JWT real validada contra `GET /api/v1/auth/me` (sin usuarios hardcodeados) | ✅ **Completada** |
-| **Etapa 2** | • `SearchResultsScreen` (`cliente_resultados_de_profesionales`)<br>• `ProfessionalProfileScreen` (`cliente_perfil_del_profesional_y_contacto`)<br>• `TopProfessionalsMonthScreen` (`comunidad_top_profesionales_del_mes`) | 🔜 **Siguiente Etapa** |
-| **Etapa 3** | • `GuidedRequestScreen` (`cliente_solicitud_guiada_a_roberto`)<br>• `RequestConfirmationScreen` (`cliente_elegir_contacto_y_confirmaci_n`)<br>• `ProfessionalEnRouteMapScreen` (`cliente_profesional_en_camino_y_mapa_en_vivo`)<br>• `JobCompletedReviewScreen` (`cliente_trabajo_terminado_y_calificaci_n`) | ⏳ **Etapa 3** |
-| **Etapa 4** | • `ProfessionalVerificationScreen` (`profesional_registro_y_verificaci_n_dni`)<br>• `ProfessionalDashboardScreen` (`profesional_panel_y_solicitudes_recibidas`)<br>• `ProfessionalAcceptJobScreen` (`profesional_aceptar_trabajo_e_iniciar_viaje`) | ⏳ **Etapa 4** |
+| Paso | Pantallas / Componentes | Estado |
+| :---: | :--- | :---: |
+| **Paso 1** | • Modularización de `StitchWorkflowScreens.kt` en archivos individuales por vista<br>• `GdoLogoBadge` oficial (escudo #1E40AF + tilde verde #15803D)<br>• `RoleSelectionScreen.kt` (Vista #8 con selector de rol inicial 96dp)<br>• Rediseño de Login: eliminar AlertDialog precario, formulario dedicado con estados de carga y manejo inline de errores | 🔜 **En curso (Punto de partida)** |
+| **Paso 2** | • `RegisterScreen.kt`: selector visual de rol, normalización telefónica, selector de barrio real y términos de convivencia legal | ⏳ Pendiente |
+| **Paso 3** | • Redirección inteligente post-login según rol (`client` vs `professional` verificado vs onboarding) | ⏳ Pendiente |
+| **Paso 4** | • Separación de botones TopAppBar, pestaña 'Mis contactos' a historial real y pantalla 'Mi Cuenta' por rol | ⏳ Pendiente |
+| **Paso 5** | • Home del vecino (Vista #4): chips de diagnóstico sin textos pre-escritos y navegación a resultados | ⏳ Pendiente |
+| **Paso 6** | • `SearchResultsScreen` (Vista #5): fotos de perfil 64dp, badges combinados (urgencia + matrícula) y tira para mayores | ⏳ Pendiente |
+| **Paso 7** | • `ProfessionalProfileScreen` (Vista #6): sin fallbacks falsos, 3 tarjetas de garantía, portfolio Coil y opiniones | ⏳ Pendiente |
+| **Paso 8** | • `TopProfessionalsMonthScreen` (Vista #7): podio barrial (#1 Oro, #2 Plata, #3 Bronce) y filtros | ⏳ Pendiente |
+| **Paso 9** | • `GuidedRequestScreen` (Vista #9): tarjetas de urgencia 72dp, preview y borrado de foto | ⏳ Pendiente |
+| **Paso 10** | • `RequestConfirmationScreen` (Vista #10): confirmación con tilde 64dp, botones gigantes WhatsApp/Llamada | ⏳ Pendiente |
+| **Paso 11** | • `ProfessionalEnRouteMapScreen` (Vista #11) + pestaña 'Mis contactos' con mapa y ETA | ⏳ Pendiente |
+| **Paso 12** | • `JobCompletedReviewScreen` (Vista #12): 5 estrellas doradas 48dp, 5 aspectos destacables | ⏳ Pendiente |
+| **Paso 13** | • `ProfessionalVerificationScreen` (Vista #13): selector de 8 rubros, fotos reales DNI Frente/Dorso | ⏳ Pendiente |
+| **Paso 14** | • `ProfessionalDashboardScreen` (Vista #14) + `ProfessionalAcceptJobScreen` (Vista #15) + APK Final | ⏳ Pendiente |
 
 ---
 
