@@ -1,6 +1,7 @@
 package ar.guiaoficios.app.ui
 
 import android.app.Application
+import android.location.Geocoder
 import android.net.Uri
 import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
@@ -10,14 +11,17 @@ import ar.guiaoficios.app.data.api.RetrofitClient
 import ar.guiaoficios.app.data.api.SessionManager
 import ar.guiaoficios.app.data.model.*
 import java.security.MessageDigest
+import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 data class GuiaUiState(
@@ -183,7 +187,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, authError = null, statusMessage = null) }
             try {
-                val authRes = api.registerUser(input)
+                val enrichedInput = if (input.saved_lat == null || input.saved_lat == 0.0) {
+                    val geo = resolveGeocodeInternal(locality = input.neighborhood, address = input.address)
+                    input.copy(
+                        neighborhood = geo.neighborhood.ifBlank { input.neighborhood },
+                        saved_address = geo.formatted_address,
+                        saved_lat = geo.lat,
+                        saved_lng = geo.lng
+                    )
+                } else {
+                    input
+                }
+                val authRes = api.registerUser(enrichedInput)
                 sessionManager.saveAuthSession(authRes.token, authRes.user)
                 _uiState.update {
                     it.copy(
@@ -317,22 +332,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateAddress(newAddress: String) {
+    private suspend fun resolveGeocodeInternal(locality: String, address: String): GeocodeResultDto {
+        val cleanLoc = locality.trim()
+        val cleanAddr = address.trim()
+        try {
+            val res = api.geocodeAddress(locality = cleanLoc, address = cleanAddr)
+            if (res.lat != 0.0 && res.lng != 0.0) {
+                return res
+            }
+        } catch (_: Exception) {
+            // Si el backend no responde, intentar con el Geocoder nativo de Android (Google Play Services)
+        }
+
+        val combinedQuery = listOf(cleanAddr, cleanLoc, "Argentina")
+            .filter { it.isNotBlank() }
+            .joinToString(", ")
+
+        try {
+            val nativeGeo = withContext(Dispatchers.IO) {
+                @Suppress("DEPRECATION")
+                Geocoder(getApplication(), Locale("es", "AR")).getFromLocationName(combinedQuery, 1)
+            }
+            val top = nativeGeo?.firstOrNull()
+            if (top != null && top.hasLatitude() && top.hasLongitude()) {
+                val localityName = top.locality ?: top.subAdminArea ?: cleanLoc
+                val provName = top.adminArea ?: ""
+                val nbLabel = if (localityName.isNotBlank() && provName.isNotBlank() && !localityName.equals(provName, ignoreCase = true)) {
+                    "$localityName, $provName"
+                } else {
+                    cleanLoc.ifBlank { localityName }
+                }
+                val formatted = top.getAddressLine(0)?.removeSuffix(", Argentina")
+                    ?: listOf(cleanAddr, nbLabel).filter { it.isNotBlank() }.joinToString(", ")
+                return GeocodeResultDto(
+                    formatted_address = formatted,
+                    neighborhood = nbLabel,
+                    locality = localityName,
+                    province = provName,
+                    lat = top.latitude,
+                    lng = top.longitude,
+                    source = "android_geocoder",
+                    verified = true
+                )
+            }
+        } catch (_: Exception) {
+            // Fallback al catálogo sugerido local
+        }
+
+        val (catLat, catLng) = findNeighborhoodCoordinates("$cleanLoc $cleanAddr")
+        val finalLat = if (catLat != 0.0) catLat else -34.5703
+        val finalLng = if (catLng != 0.0) catLng else -59.1050
+        val fullAddr = listOf(cleanAddr, cleanLoc).filter { it.isNotBlank() }.joinToString(", ")
+        return GeocodeResultDto(
+            formatted_address = fullAddr.ifBlank { "Luján, Buenos Aires" },
+            neighborhood = cleanLoc.ifBlank { "Luján, Buenos Aires" },
+            locality = cleanLoc,
+            lat = finalLat,
+            lng = finalLng,
+            source = "local_catalog",
+            verified = catLat != 0.0
+        )
+    }
+
+    fun validateAddressGeocode(
+        locality: String,
+        address: String,
+        onResult: (GeocodeResultDto) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = resolveGeocodeInternal(locality = locality, address = address)
+            onResult(result)
+        }
+    }
+
+    fun updateAddress(newAddress: String, locality: String = "") {
         viewModelScope.launch {
             try {
-                val (lat, lng) = findNeighborhoodCoordinates(newAddress)
+                val geo = resolveGeocodeInternal(locality = locality, address = newAddress)
                 val updatedUser = api.updateUserAddress(
                     UpdateAddressInputDto(
-                        saved_address = newAddress,
-                        saved_lat = lat,
-                        saved_lng = lng
+                        neighborhood = geo.neighborhood,
+                        saved_address = geo.formatted_address,
+                        saved_lat = geo.lat,
+                        saved_lng = geo.lng
                     )
                 )
                 sessionManager.updateSavedUser(updatedUser)
                 _uiState.update {
                     it.copy(
                         currentUser = updatedUser,
-                        statusMessage = "Dirección actualizada en PostgreSQL: $newAddress"
+                        statusMessage = "Ubicación validada y actualizada: ${updatedUser.saved_address}"
                     )
                 }
             } catch (e: Exception) {

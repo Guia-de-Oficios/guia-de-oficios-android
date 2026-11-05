@@ -18,7 +18,22 @@ data class NeighborhoodOption(
     val lng: Double
 )
 
-val CABA_GBA_NEIGHBORHOODS: List<NeighborhoodOption> = listOf(
+val ARGENTINA_SUGGESTED_LOCALITIES: List<NeighborhoodOption> = listOf(
+    // Gran Mendoza (Zonas de lanzamiento prioritario)
+    NeighborhoodOption("Ciudad de Mendoza, Mendoza", "Gran Mendoza", -32.8895, -68.8458),
+    NeighborhoodOption("Godoy Cruz, Mendoza", "Gran Mendoza", -32.9253, -68.8444),
+    NeighborhoodOption("Guaymallén, Mendoza", "Gran Mendoza", -32.8997, -68.7975),
+    NeighborhoodOption("Las Heras, Mendoza", "Gran Mendoza", -32.8527, -68.8284),
+    NeighborhoodOption("Luján de Cuyo, Mendoza", "Gran Mendoza", -33.0381, -68.8794),
+    NeighborhoodOption("Maipú, Mendoza", "Gran Mendoza", -32.9774, -68.7867),
+    // Luján y Zona Oeste PBA (Zonas de lanzamiento prioritario)
+    NeighborhoodOption("Luján, Buenos Aires", "PBA Oeste", -34.5703, -59.1050),
+    NeighborhoodOption("Open Door, Luján, Buenos Aires", "PBA Oeste", -34.4961, -59.0692),
+    NeighborhoodOption("Jáuregui, Luján, Buenos Aires", "PBA Oeste", -34.5969, -59.1756),
+    NeighborhoodOption("General Rodríguez, Buenos Aires", "PBA Oeste", -34.6083, -58.9489),
+    NeighborhoodOption("Mercedes, Buenos Aires", "PBA Oeste", -34.6515, -59.4307),
+    NeighborhoodOption("Pilar, Buenos Aires", "GBA Norte/Oeste", -34.4587, -58.9142),
+    // CABA y GBA
     NeighborhoodOption("Caballito, CABA", "CABA Centro", -34.6186, -58.4368),
     NeighborhoodOption("Flores, CABA", "CABA Oeste", -34.6283, -58.4632),
     NeighborhoodOption("Almagro, CABA", "CABA Centro", -34.6095, -58.4206),
@@ -44,19 +59,25 @@ val CABA_GBA_NEIGHBORHOODS: List<NeighborhoodOption> = listOf(
     NeighborhoodOption("Lomas de Zamora, GBA Sur", "GBA Sur", -34.7609, -58.4063),
     NeighborhoodOption("Morón, GBA Oeste", "GBA Oeste", -34.6534, -58.6198),
     NeighborhoodOption("Ramos Mejía, GBA Oeste", "GBA Oeste", -34.6453, -58.5647),
-    NeighborhoodOption("Caseros, GBA Oeste", "GBA Oeste", -34.6094, -58.5633)
+    NeighborhoodOption("Caseros, GBA Oeste", "GBA Oeste", -34.6094, -58.5633),
+    // Otras ciudades de Argentina
+    NeighborhoodOption("La Plata, Buenos Aires", "PBA Capital", -34.9205, -57.9536),
+    NeighborhoodOption("Córdoba Capital, Córdoba", "Córdoba", -31.4201, -64.1888),
+    NeighborhoodOption("Rosario, Santa Fe", "Santa Fe", -32.9442, -60.6505)
 )
+
+val CABA_GBA_NEIGHBORHOODS: List<NeighborhoodOption> = ARGENTINA_SUGGESTED_LOCALITIES
 
 fun findNeighborhoodCoordinates(text: String): Pair<Double, Double> {
     val lower = text.lowercase()
-    val match = CABA_GBA_NEIGHBORHOODS.firstOrNull { option ->
+    val match = ARGENTINA_SUGGESTED_LOCALITIES.firstOrNull { option ->
         val shortName = option.label.substringBefore(",").trim().lowercase()
         lower.contains(shortName)
     }
     return if (match != null) {
         match.lat to match.lng
     } else {
-        -34.6186 to -58.4368
+        0.0 to 0.0
     }
 }
 
@@ -117,9 +138,21 @@ data class GoogleAuthInputDto(
 )
 
 data class UpdateAddressInputDto(
+    val neighborhood: String = "",
     val saved_address: String,
-    val saved_lat: Double = -34.6186,
-    val saved_lng: Double = -58.4368
+    val saved_lat: Double = 0.0,
+    val saved_lng: Double = 0.0
+)
+
+data class GeocodeResultDto(
+    val formatted_address: String = "",
+    val neighborhood: String = "",
+    val locality: String = "",
+    val province: String = "",
+    val lat: Double = 0.0,
+    val lng: Double = 0.0,
+    val source: String = "",
+    val verified: Boolean = false
 )
 
 data class UserDto(

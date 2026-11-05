@@ -85,7 +85,7 @@ fun RoleSelectionScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "Buenos Aires y Gran Buenos Aires",
+                                text = "Gran Mendoza · Luján · AMBA",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryContainer

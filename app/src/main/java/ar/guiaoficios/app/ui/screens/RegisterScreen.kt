@@ -25,8 +25,10 @@ import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationCity
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Shield
@@ -50,13 +52,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ar.guiaoficios.app.data.model.CABA_GBA_NEIGHBORHOODS
+import ar.guiaoficios.app.data.model.ARGENTINA_SUGGESTED_LOCALITIES
+import ar.guiaoficios.app.data.model.GeocodeResultDto
 import ar.guiaoficios.app.data.model.NeighborhoodOption
 import ar.guiaoficios.app.data.model.RegisterUserInputDto
 import ar.guiaoficios.app.data.model.normalizeArgentineMobilePhone
 import ar.guiaoficios.app.ui.components.GdoBrandLogo
 import ar.guiaoficios.app.ui.components.GoogleColorIcon
 import ar.guiaoficios.app.ui.theme.*
+import java.util.Locale
 
 // =============================================================================
 // VISTA #3 STITCH (`[AND-2.3]` & `[AND-2.4]`): registro_google_o_manual
@@ -64,10 +68,10 @@ import ar.guiaoficios.app.ui.theme.*
 //   #1E40AF, fondo #EFF6FF y tilde verde #15803D
 // - Validación individual por campo con `isError` + `supportingText`:
 //   (1) Nombre y apellido (>= 3 letras)
-//   (2) Teléfono celular argentino (normalizando +54 9 11)
+//   (2) Teléfono celular argentino (normalizando +54 9 ...)
 //   (3) Email válido (Patterns.EMAIL_ADDRESS)
-//   (4) Barrio (selector desplegable CABA/GBA con coordenadas reales)
-//   (5) Dirección (calle y altura en el barrio)
+//   (4) Localidad / Ciudad / Barrio abierto a todo el país (Gran Mendoza, Luján Bs.As., CABA/GBA o cualquier localidad)
+//   (5) Dirección (calle y altura) con geocodificación dinámica en vivo
 //   (6) Contraseña (>= 6 caracteres con ojito mostrar/ocultar)
 // - Bloque de aceptación de 'Términos de Convivencia Vecinal y Política de Privacidad'
 //   con diálogo de lectura accesible
@@ -81,6 +85,7 @@ fun RegisterAccountScreen(
     isLoading: Boolean = false,
     authError: String? = null,
     onClearAuthError: () -> Unit = {},
+    onValidateAddressGeocode: (locality: String, address: String, onResult: (GeocodeResultDto) -> Unit) -> Unit = { _, _, _ -> },
     onContinueGoogle: (email: String, fullName: String, role: String, neighborhood: String, address: String) -> Unit,
     onSubmitManual: (RegisterUserInputDto) -> Unit,
     onSubmitLogin: (emailOrPhone: String, password: String) -> Unit = { _, _ -> },
@@ -91,9 +96,11 @@ fun RegisterAccountScreen(
     var fullName by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var selectedNeighborhood by remember { mutableStateOf<NeighborhoodOption?>(CABA_GBA_NEIGHBORHOODS.first()) }
+    var localityText by remember { mutableStateOf("Ciudad de Mendoza, Mendoza") }
     var neighborhoodExpanded by remember { mutableStateOf(false) }
     var address by remember { mutableStateOf("") }
+    var verifiedGeocode by remember { mutableStateOf<GeocodeResultDto?>(null) }
+    var isGeocoding by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var acceptedTerms by remember { mutableStateOf(true) }
@@ -124,7 +131,7 @@ fun RegisterAccountScreen(
                     .split(" ")
                     .filter { it.isNotBlank() }
                     .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
-                val nbLabel = selectedNeighborhood?.label ?: "Caballito, CABA"
+                val nbLabel = localityText.trim().ifBlank { "Ciudad de Mendoza, Mendoza" }
                 onContinueGoogle(
                     accountName,
                     derivedName.ifBlank { "Usuario Google" },
@@ -411,9 +418,20 @@ fun RegisterAccountScreen(
                     )
                 }
 
-                // 7. Selector Desplegable de Barrio de CABA / GBA (AND-2.3b)
+                // 7. Localidad, Ciudad o Barrio en cualquier punto del país (Gran Mendoza, Luján Bs.As., CABA/GBA o interior)
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val filteredSuggestions = remember(localityText) {
+                        val q = localityText.trim().lowercase()
+                        if (q.isEmpty()) {
+                            ARGENTINA_SUGGESTED_LOCALITIES.take(12)
+                        } else {
+                            ARGENTINA_SUGGESTED_LOCALITIES.filter {
+                                it.label.lowercase().contains(q) || it.zone.lowercase().contains(q)
+                            }.take(10)
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -430,31 +448,70 @@ fun RegisterAccountScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Text(
-                                    text = "Tu barrio en CABA o GBA",
+                                    text = "Localidad / Ciudad y Provincia",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = OnSurface
                                 )
                             }
-                            selectedNeighborhood?.let { nb ->
-                                Text(
-                                    text = nb.zone,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PrimaryContainer
-                                )
+                            Text(
+                                text = "Toda Argentina",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryContainer
+                            )
+                        }
+
+                        // Atajos rápidos para las zonas prioritarias de lanzamiento (Gran Mendoza, Luján Bs.As., AMBA)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                "Gran Mendoza" to "Ciudad de Mendoza, Mendoza",
+                                "Godoy Cruz" to "Godoy Cruz, Mendoza",
+                                "Luján (Bs. As.)" to "Luján, Buenos Aires"
+                            ).forEach { (chipLabel, chipValue) ->
+                                val isSelected = localityText.equals(chipValue, ignoreCase = true)
+                                Surface(
+                                    onClick = {
+                                        localityText = chipValue
+                                        neighborhoodError = null
+                                        verifiedGeocode = null
+                                    },
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = if (isSelected) Color(0xFFEFF6FF) else SurfaceContainer,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) PrimaryContainer else OutlineVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = chipLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) PrimaryContainer else OnSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
 
                         ExposedDropdownMenuBox(
-                            expanded = neighborhoodExpanded,
+                            expanded = neighborhoodExpanded && filteredSuggestions.isNotEmpty(),
                             onExpandedChange = { neighborhoodExpanded = !neighborhoodExpanded }
                         ) {
                             OutlinedTextField(
-                                value = selectedNeighborhood?.label ?: "",
-                                onValueChange = {},
-                                readOnly = true,
-                                placeholder = { Text("Seleccioná tu barrio") },
+                                value = localityText,
+                                onValueChange = {
+                                    localityText = it
+                                    neighborhoodError = null
+                                    verifiedGeocode = null
+                                    neighborhoodExpanded = true
+                                    onClearAuthError()
+                                },
+                                singleLine = true,
+                                placeholder = { Text("Ej. Godoy Cruz, Mendoza o Luján, Buenos Aires") },
                                 trailingIcon = {
                                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = neighborhoodExpanded)
                                 },
@@ -468,7 +525,7 @@ fun RegisterAccountScreen(
                                         )
                                     } else {
                                         Text(
-                                            text = "Usamos tu barrio para mostrarte oficios verificados a pocas cuadras.",
+                                            text = "Podés escribir cualquier ciudad o localidad del país o elegir una sugerencia.",
                                             color = OnSurfaceVariant
                                         )
                                     }
@@ -488,11 +545,11 @@ fun RegisterAccountScreen(
                             )
 
                             ExposedDropdownMenu(
-                                expanded = neighborhoodExpanded,
+                                expanded = neighborhoodExpanded && filteredSuggestions.isNotEmpty(),
                                 onDismissRequest = { neighborhoodExpanded = false },
                                 modifier = Modifier.background(SurfaceContainerLowest)
                             ) {
-                                CABA_GBA_NEIGHBORHOODS.forEach { option ->
+                                filteredSuggestions.forEach { option ->
                                     DropdownMenuItem(
                                         text = {
                                             Column {
@@ -510,8 +567,9 @@ fun RegisterAccountScreen(
                                             }
                                         },
                                         onClick = {
-                                            selectedNeighborhood = option
+                                            localityText = option.label
                                             neighborhoodError = null
+                                            verifiedGeocode = null
                                             neighborhoodExpanded = false
                                         }
                                     )
@@ -521,27 +579,135 @@ fun RegisterAccountScreen(
                     }
                 }
 
-                // 8. Dirección (Calle y altura en el barrio)
+                // 8. Dirección (Calle y altura) + Botón de Validación Geográfica en vivo
                 item {
-                    StitchValidatedInputField(
-                        icon = Icons.Default.Home,
-                        label = "Calle y altura aproximada",
-                        badgeText = "Solo para calcular distancia",
-                        value = address,
-                        onValueChange = {
-                            address = it
-                            addressError = null
-                            onClearAuthError()
-                        },
-                        placeholder = "Ej. Av. Pedro Goyena 1420",
-                        isError = addressError != null,
-                        supportingText = addressError,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Words,
-                            keyboardType = KeyboardType.Text,
-                            imeAction = ImeAction.Next
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StitchValidatedInputField(
+                            icon = Icons.Default.Home,
+                            label = "Calle y altura aproximada",
+                            badgeText = "Validación por mapa",
+                            value = address,
+                            onValueChange = {
+                                address = it
+                                addressError = null
+                                verifiedGeocode = null
+                                onClearAuthError()
+                            },
+                            placeholder = "Ej. San Martín 1250 o Av. Las Heras 450",
+                            isError = addressError != null,
+                            supportingText = addressError,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Next
+                            )
                         )
-                    )
+
+                        OutlinedButton(
+                            onClick = {
+                                val cleanLoc = localityText.trim()
+                                val cleanAddr = address.trim()
+                                if (cleanLoc.length < 3) {
+                                    neighborhoodError = "Ingresá tu localidad y provincia (ej. Luján, Buenos Aires o Godoy Cruz, Mendoza)."
+                                } else if (cleanAddr.length < 3) {
+                                    addressError = "Ingresá tu calle y altura para validar en el mapa."
+                                } else {
+                                    isGeocoding = true
+                                    onValidateAddressGeocode(cleanLoc, cleanAddr) { result ->
+                                        isGeocoding = false
+                                        verifiedGeocode = result
+                                        if (result.neighborhood.isNotBlank()) {
+                                            localityText = result.neighborhood
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isGeocoding && !isLoading,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.5.dp, PrimaryContainer),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            if (isGeocoding) {
+                                CircularProgressIndicator(
+                                    color = PrimaryContainer,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Validando ubicación en el mapa...",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryContainer
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.MyLocation,
+                                    contentDescription = null,
+                                    tint = PrimaryContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Validar dirección en el mapa",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryContainer
+                                )
+                            }
+                        }
+
+                        verifiedGeocode?.let { geo ->
+                            Surface(
+                                color = Color(0xFFF0FDF4),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFF15803D).copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(0xFF15803D),
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Ubicación verificada",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Ubicación validada: ${geo.formatted_address}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF14532D)
+                                        )
+                                        Text(
+                                            text = String.format(
+                                                Locale.US,
+                                                "Zona: %s · Coord: %.4f, %.4f",
+                                                geo.neighborhood.ifBlank { localityText },
+                                                geo.lat,
+                                                geo.lng
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF166534)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -821,15 +987,15 @@ fun RegisterAccountScreen(
                                 hasError = true
                             }
 
-                            val chosenNb = selectedNeighborhood
-                            if (chosenNb == null) {
-                                neighborhoodError = "Seleccioná tu barrio de CABA o GBA."
+                            val cleanLocality = localityText.trim()
+                            if (cleanLocality.length < 3) {
+                                neighborhoodError = "Ingresá tu localidad y provincia (ej. Luján, Buenos Aires o Godoy Cruz, Mendoza)."
                                 hasError = true
                             }
 
                             val cleanAddress = address.trim()
                             if (cleanAddress.length < 4) {
-                                addressError = "Ingresá tu calle y altura aproximada (ej. Av. Rivadavia 5420)."
+                                addressError = "Ingresá tu calle y altura aproximada (ej. San Martín 1250)."
                                 hasError = true
                             }
 
@@ -843,12 +1009,16 @@ fun RegisterAccountScreen(
                                 hasError = true
                             }
 
-                            if (!hasError && chosenNb != null) {
+                            if (!hasError) {
                                 val normalizedPhone = normalizeArgentineMobilePhone(phone)
-                                val combinedAddress = if (cleanAddress.lowercase().contains(chosenNb.label.substringBefore(",").lowercase())) {
+                                val geo = verifiedGeocode
+                                val finalNeighborhood = geo?.neighborhood?.ifBlank { cleanLocality } ?: cleanLocality
+                                val combinedAddress = geo?.formatted_address?.ifBlank {
+                                    "$cleanAddress, $finalNeighborhood"
+                                } ?: if (cleanAddress.lowercase().contains(finalNeighborhood.substringBefore(",").lowercase())) {
                                     cleanAddress
                                 } else {
-                                    "$cleanAddress, ${chosenNb.label}"
+                                    "$cleanAddress, $finalNeighborhood"
                                 }
                                 onSubmitManual(
                                     RegisterUserInputDto(
@@ -858,11 +1028,11 @@ fun RegisterAccountScreen(
                                         password = password,
                                         role = role,
                                         auth_provider = "manual",
-                                        neighborhood = chosenNb.label,
+                                        neighborhood = finalNeighborhood,
                                         address = cleanAddress,
                                         saved_address = combinedAddress,
-                                        saved_lat = chosenNb.lat,
-                                        saved_lng = chosenNb.lng
+                                        saved_lat = geo?.lat ?: 0.0,
+                                        saved_lng = geo?.lng ?: 0.0
                                     )
                                 )
                             }

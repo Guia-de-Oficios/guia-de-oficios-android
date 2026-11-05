@@ -240,6 +240,9 @@ fun GuiaDeOficiosApp(
                         isLoading = uiState.isLoading,
                         authError = uiState.authError,
                         onClearAuthError = { mainViewModel.clearAuthError() },
+                        onValidateAddressGeocode = { locality, address, onResult ->
+                            mainViewModel.validateAddressGeocode(locality, address, onResult)
+                        },
                         onContinueGoogle = { email, fullName, selectedRole, neighborhood, address ->
                             mainViewModel.authenticateWithGoogle(
                                 email = email,

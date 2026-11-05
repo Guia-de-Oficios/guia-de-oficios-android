@@ -205,7 +205,7 @@ fun WelcomeRoleScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Buenos Aires y Gran Buenos Aires",
+                            text = "Gran Mendoza · Luján · AMBA",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = PrimaryContainer
