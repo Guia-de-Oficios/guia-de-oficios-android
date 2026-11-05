@@ -11,6 +11,103 @@ data class CategoryDto(
     val display_order: Int = 0
 )
 
+data class NeighborhoodOption(
+    val label: String,
+    val zone: String,
+    val lat: Double,
+    val lng: Double
+)
+
+val ARGENTINA_SUGGESTED_LOCALITIES: List<NeighborhoodOption> = listOf(
+    // Gran Mendoza (Zonas de lanzamiento prioritario)
+    NeighborhoodOption("Ciudad de Mendoza, Mendoza", "Gran Mendoza", -32.8895, -68.8458),
+    NeighborhoodOption("Godoy Cruz, Mendoza", "Gran Mendoza", -32.9253, -68.8444),
+    NeighborhoodOption("Guaymallén, Mendoza", "Gran Mendoza", -32.8997, -68.7975),
+    NeighborhoodOption("Las Heras, Mendoza", "Gran Mendoza", -32.8527, -68.8284),
+    NeighborhoodOption("Luján de Cuyo, Mendoza", "Gran Mendoza", -33.0381, -68.8794),
+    NeighborhoodOption("Maipú, Mendoza", "Gran Mendoza", -32.9774, -68.7867),
+    // Luján y Zona Oeste PBA (Zonas de lanzamiento prioritario)
+    NeighborhoodOption("Luján, Buenos Aires", "PBA Oeste", -34.5703, -59.1050),
+    NeighborhoodOption("Open Door, Luján, Buenos Aires", "PBA Oeste", -34.4961, -59.0692),
+    NeighborhoodOption("Jáuregui, Luján, Buenos Aires", "PBA Oeste", -34.5969, -59.1756),
+    NeighborhoodOption("General Rodríguez, Buenos Aires", "PBA Oeste", -34.6083, -58.9489),
+    NeighborhoodOption("Mercedes, Buenos Aires", "PBA Oeste", -34.6515, -59.4307),
+    NeighborhoodOption("Pilar, Buenos Aires", "GBA Norte/Oeste", -34.4587, -58.9142),
+    // CABA y GBA
+    NeighborhoodOption("Caballito, CABA", "CABA Centro", -34.6186, -58.4368),
+    NeighborhoodOption("Flores, CABA", "CABA Oeste", -34.6283, -58.4632),
+    NeighborhoodOption("Almagro, CABA", "CABA Centro", -34.6095, -58.4206),
+    NeighborhoodOption("Palermo, CABA", "CABA Norte", -34.5889, -58.4305),
+    NeighborhoodOption("Belgrano, CABA", "CABA Norte", -34.5627, -58.4583),
+    NeighborhoodOption("Recoleta, CABA", "CABA Norte", -34.5895, -58.3974),
+    NeighborhoodOption("Villa Urquiza, CABA", "CABA Noroeste", -34.5736, -58.4864),
+    NeighborhoodOption("Villa Crespo, CABA", "CABA Centro", -34.5986, -58.4426),
+    NeighborhoodOption("Villa Devoto, CABA", "CABA Oeste", -34.6019, -58.5122),
+    NeighborhoodOption("Parque Chacabuco, CABA", "CABA Sur", -34.6347, -58.4428),
+    NeighborhoodOption("Boedo, CABA", "CABA Sur", -34.6258, -58.4168),
+    NeighborhoodOption("San Telmo, CABA", "CABA Centro/Sur", -34.6212, -58.3731),
+    NeighborhoodOption("Barracas, CABA", "CABA Sur", -34.6416, -58.3768),
+    NeighborhoodOption("Núñez, CABA", "CABA Norte", -34.5453, -58.4619),
+    NeighborhoodOption("Colegiales, CABA", "CABA Norte", -34.5750, -58.4485),
+    NeighborhoodOption("Chacarita, CABA", "CABA Centro/Norte", -34.5881, -58.4542),
+    NeighborhoodOption("Liniers, CABA", "CABA Oeste", -34.6428, -58.5215),
+    NeighborhoodOption("Mataderos, CABA", "CABA Suroeste", -34.6578, -58.5032),
+    NeighborhoodOption("Vicente López, GBA Norte", "GBA Norte", -34.5265, -58.4795),
+    NeighborhoodOption("San Isidro, GBA Norte", "GBA Norte", -34.4721, -58.5272),
+    NeighborhoodOption("Avellaneda, GBA Sur", "GBA Sur", -34.6625, -58.3653),
+    NeighborhoodOption("Lanús, GBA Sur", "GBA Sur", -34.7069, -58.3908),
+    NeighborhoodOption("Lomas de Zamora, GBA Sur", "GBA Sur", -34.7609, -58.4063),
+    NeighborhoodOption("Morón, GBA Oeste", "GBA Oeste", -34.6534, -58.6198),
+    NeighborhoodOption("Ramos Mejía, GBA Oeste", "GBA Oeste", -34.6453, -58.5647),
+    NeighborhoodOption("Caseros, GBA Oeste", "GBA Oeste", -34.6094, -58.5633),
+    // Otras ciudades de Argentina
+    NeighborhoodOption("La Plata, Buenos Aires", "PBA Capital", -34.9205, -57.9536),
+    NeighborhoodOption("Córdoba Capital, Córdoba", "Córdoba", -31.4201, -64.1888),
+    NeighborhoodOption("Rosario, Santa Fe", "Santa Fe", -32.9442, -60.6505)
+)
+
+val CABA_GBA_NEIGHBORHOODS: List<NeighborhoodOption> = ARGENTINA_SUGGESTED_LOCALITIES
+
+fun findNeighborhoodCoordinates(text: String): Pair<Double, Double> {
+    val lower = text.lowercase()
+    val match = ARGENTINA_SUGGESTED_LOCALITIES.firstOrNull { option ->
+        val shortName = option.label.substringBefore(",").trim().lowercase()
+        lower.contains(shortName)
+    }
+    return if (match != null) {
+        match.lat to match.lng
+    } else {
+        0.0 to 0.0
+    }
+}
+
+fun normalizeArgentineMobilePhone(rawPhone: String): String {
+    val digits = rawPhone.filter { it.isDigit() }
+    val localDigits = when {
+        digits.startsWith("549") && digits.length >= 11 -> digits.removePrefix("549")
+        digits.startsWith("54") && digits.length >= 10 -> digits.removePrefix("54")
+        digits.startsWith("0") && digits.length >= 9 -> digits.removePrefix("0")
+        else -> digits
+    }.let { cleaned ->
+        if (cleaned.startsWith("15") && cleaned.length == 10) {
+            "11" + cleaned.removePrefix("15")
+        } else if (cleaned.length == 8) {
+            "11$cleaned"
+        } else {
+            cleaned
+        }
+    }
+    return if (localDigits.startsWith("11") && localDigits.length == 10) {
+        val part1 = localDigits.substring(2, 6)
+        val part2 = localDigits.substring(6, 10)
+        "+54 9 11 $part1-$part2"
+    } else if (localDigits.length >= 8) {
+        "+54 9 $localDigits"
+    } else {
+        rawPhone.trim()
+    }
+}
+
 data class RegisterUserInputDto(
     val full_name: String,
     val phone: String,
@@ -18,6 +115,8 @@ data class RegisterUserInputDto(
     val password: String? = null,
     val role: String,           // "client" | "professional"
     val auth_provider: String = "manual",
+    val neighborhood: String = "",
+    val address: String = "",
     val saved_address: String? = "Av. Rivadavia 5420, Caballito",
     val saved_lat: Double? = -34.6186,
     val saved_lng: Double? = -58.4368
@@ -33,13 +132,27 @@ data class GoogleAuthInputDto(
     val email: String,
     val full_name: String,
     val phone: String = "",
-    val role: String = "client"
+    val role: String = "client",
+    val neighborhood: String = "",
+    val address: String = ""
 )
 
 data class UpdateAddressInputDto(
+    val neighborhood: String = "",
     val saved_address: String,
-    val saved_lat: Double = -34.6186,
-    val saved_lng: Double = -58.4368
+    val saved_lat: Double = 0.0,
+    val saved_lng: Double = 0.0
+)
+
+data class GeocodeResultDto(
+    val formatted_address: String = "",
+    val neighborhood: String = "",
+    val locality: String = "",
+    val province: String = "",
+    val lat: Double = 0.0,
+    val lng: Double = 0.0,
+    val source: String = "",
+    val verified: Boolean = false
 )
 
 data class UserDto(

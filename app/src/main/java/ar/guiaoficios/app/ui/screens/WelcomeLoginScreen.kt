@@ -44,130 +44,7 @@ import ar.guiaoficios.app.ui.components.GoogleColorIcon
 import ar.guiaoficios.app.ui.theme.*
 
 // =============================================================================
-// COMPONENTE COMPARTIDO: Diálogo de Cuenta Google (cuando el dispositivo no devuelve cuenta nativa)
-// =============================================================================
-@Composable
-fun GoogleAccountInputDialog(
-    role: String,
-    onDismiss: () -> Unit,
-    onConfirmAccount: (email: String, fullName: String, selectedRole: String) -> Unit
-) {
-    var googleEmail by remember { mutableStateOf("") }
-    var googleName by remember { mutableStateOf("") }
-    var selectedRole by remember { mutableStateOf(role) }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceContainerLowest,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                GoogleColorIcon(modifier = Modifier.size(24.dp))
-                Text(
-                    text = "Continuar con Google",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Ingresá tu cuenta de Google para acceder o crear tu perfil en Guía de Oficios:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OnSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = googleEmail,
-                    onValueChange = {
-                        googleEmail = it
-                        errorMsg = null
-                    },
-                    label = { Text("Correo de Google (Gmail)") },
-                    placeholder = { Text("tu.nombre@gmail.com") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                OutlinedTextField(
-                    value = googleName,
-                    onValueChange = {
-                        googleName = it
-                        errorMsg = null
-                    },
-                    label = { Text("Tu nombre y apellido") },
-                    placeholder = { Text("Ej. Nicolás Gómez") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Text(
-                    text = "Tipo de perfil:",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedRole == "client",
-                        onClick = { selectedRole = "client" },
-                        label = { Text("Vecino / Cliente") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = selectedRole == "professional",
-                        onClick = { selectedRole = "professional" },
-                        label = { Text("Profesional") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                if (errorMsg != null) {
-                    Text(
-                        text = errorMsg!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = ErrorColor,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val cleanEmail = googleEmail.trim()
-                    if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
-                        errorMsg = "Ingresá un correo electrónico válido (ej. usuario@gmail.com)"
-                        return@Button
-                    }
-                    val cleanName = googleName.trim().ifBlank {
-                        cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
-                    }
-                    onConfirmAccount(cleanEmail, cleanName, selectedRole)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Ingresar con Google", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar", color = OnSurfaceVariant)
-            }
-        }
-    )
-}
-
-// =============================================================================
-// VISTA #2 STITCH (`[AND-1.4]`): bienvenida_y_selecci_n_de_rol
+// VISTA #2 STITCH (`[AND-1.4]` & `[AND-2.4]`): bienvenida_y_selecci_n_de_rol
 // - Botones táctiles de 56dp ('Continuar con Google', 'Ingresar con correo o teléfono')
 // - BottomSheet / Vista dedicada de Login (reemplaza al AlertDialog que se cerraba solo):
 //   (a) Campo Identificador (Email o Celular) de 56dp con KeyboardOptions
@@ -175,6 +52,7 @@ fun GoogleAccountInputDialog(
 //   (c) Mensaje de error inline en rojo dentro del formulario sin borrar lo escrito
 //   (d) Botón 'Ingresar' con spinner CircularProgressIndicator mientras isLoading == true
 //   (e) Flujo '¿Olvidaste tu contraseña?' integrado
+// - Sin GoogleAccountInputDialog falso (eliminado en `[AND-2.4]`)
 // =============================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -191,7 +69,7 @@ fun WelcomeRoleScreen(
 ) {
     var selectedRole by remember { mutableStateOf(initialRole) }
     var showLoginSheet by remember { mutableStateOf(false) }
-    var showGoogleDialog by remember { mutableStateOf(false) }
+    var googleNotice by remember { mutableStateOf<String?>(null) }
 
     val googleAccountPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -199,6 +77,7 @@ fun WelcomeRoleScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
             if (!accountName.isNullOrBlank()) {
+                googleNotice = null
                 val derivedName = accountName.substringBefore("@")
                     .replace(".", " ")
                     .replace("_", " ")
@@ -207,14 +86,15 @@ fun WelcomeRoleScreen(
                     .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
                 onGoogleSignIn(accountName, derivedName.ifBlank { "Usuario Google" }, selectedRole)
             } else {
-                showGoogleDialog = true
+                googleNotice = "Seleccioná una cuenta de Google configurada en tu teléfono o ingresá con tu correo y contraseña."
             }
         } else {
-            showGoogleDialog = true
+            googleNotice = "No se seleccionó ninguna cuenta de Google del dispositivo. Podés ingresar con tu correo/teléfono y contraseña."
         }
     }
 
     val launchGoogleFlow: () -> Unit = {
+        googleNotice = null
         runCatching {
             val intent = AccountManager.newChooseAccountIntent(
                 null,
@@ -227,19 +107,9 @@ fun WelcomeRoleScreen(
             )
             googleAccountPickerLauncher.launch(intent)
         }.onFailure {
-            showGoogleDialog = true
+            googleNotice = "Tu dispositivo no tiene cuentas de Google disponibles. Ingresá con tu correo y contraseña."
+            showLoginSheet = true
         }
-    }
-
-    if (showGoogleDialog) {
-        GoogleAccountInputDialog(
-            role = selectedRole,
-            onDismiss = { showGoogleDialog = false },
-            onConfirmAccount = { email, fullName, role ->
-                showGoogleDialog = false
-                onGoogleSignIn(email, fullName, role)
-            }
-        )
     }
 
     if (showLoginSheet) {
@@ -335,7 +205,7 @@ fun WelcomeRoleScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Buenos Aires y Gran Buenos Aires",
+                            text = "Gran Mendoza · Luján · AMBA",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = PrimaryContainer
@@ -398,6 +268,23 @@ fun WelcomeRoleScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = OnSurface
+                        )
+                    }
+                }
+
+                if (!googleNotice.isNullOrBlank()) {
+                    Surface(
+                        color = SurfaceContainerLow,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, PrimaryFixedDim),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = googleNotice!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = OnSurface,
+                            modifier = Modifier.padding(12.dp)
                         )
                     }
                 }

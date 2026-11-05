@@ -2,6 +2,7 @@ package ar.guiaoficios.app.ui.screens
 
 import android.accounts.AccountManager
 import android.app.Activity
+import android.util.Patterns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -9,18 +10,28 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Handyman
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocationCity
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonSearch
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -32,25 +43,50 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import ar.guiaoficios.app.data.model.ARGENTINA_SUGGESTED_LOCALITIES
+import ar.guiaoficios.app.data.model.GeocodeResultDto
+import ar.guiaoficios.app.data.model.NeighborhoodOption
 import ar.guiaoficios.app.data.model.RegisterUserInputDto
+import ar.guiaoficios.app.data.model.normalizeArgentineMobilePhone
 import ar.guiaoficios.app.ui.components.GdoBrandLogo
 import ar.guiaoficios.app.ui.components.GoogleColorIcon
 import ar.guiaoficios.app.ui.theme.*
+import java.util.Locale
 
 // =============================================================================
-// PANTALLA 3 STITCH: registro_google_o_manual
-// Respeta 1:1 `registro_google_o_manual/code.html` y `screen.png`
+// VISTA #3 STITCH (`[AND-2.3]` & `[AND-2.4]`): registro_google_o_manual
+// - Selector de Rol ('Soy Vecino / Cliente' vs 'Soy Profesional') con borde azul
+//   #1E40AF, fondo #EFF6FF y tilde verde #15803D
+// - Validación individual por campo con `isError` + `supportingText`:
+//   (1) Nombre y apellido (>= 3 letras)
+//   (2) Teléfono celular argentino (normalizando +54 9 ...)
+//   (3) Email válido (Patterns.EMAIL_ADDRESS)
+//   (4) Localidad / Ciudad / Barrio abierto a todo el país (Gran Mendoza, Luján Bs.As., CABA/GBA o cualquier localidad)
+//   (5) Dirección (calle y altura) con geocodificación dinámica en vivo
+//   (6) Contraseña (>= 6 caracteres con ojito mostrar/ocultar)
+// - Bloque de aceptación de 'Términos de Convivencia Vecinal y Política de Privacidad'
+//   con diálogo de lectura accesible
+// - Sin GoogleAccountInputDialog falso
 // =============================================================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegisterAccountScreen(
     initialRole: String = "client",
     initialLoginMode: Boolean = false,
-    onContinueGoogle: (email: String, fullName: String, role: String) -> Unit,
+    isLoading: Boolean = false,
+    authError: String? = null,
+    onClearAuthError: () -> Unit = {},
+    onValidateAddressGeocode: (locality: String, address: String, onResult: (GeocodeResultDto) -> Unit) -> Unit = { _, _, _ -> },
+    onContinueGoogle: (email: String, fullName: String, role: String, neighborhood: String, address: String) -> Unit,
     onSubmitManual: (RegisterUserInputDto) -> Unit,
     onSubmitLogin: (emailOrPhone: String, password: String) -> Unit = { _, _ -> },
     onBack: () -> Unit
@@ -60,10 +96,27 @@ fun RegisterAccountScreen(
     var fullName by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var localityText by remember { mutableStateOf("Ciudad de Mendoza, Mendoza") }
+    var neighborhoodExpanded by remember { mutableStateOf(false) }
+    var address by remember { mutableStateOf("") }
+    var verifiedGeocode by remember { mutableStateOf<GeocodeResultDto?>(null) }
+    var isGeocoding by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var validationError by remember { mutableStateOf<String?>(null) }
-    var showGoogleDialog by remember { mutableStateOf(false) }
+    var acceptedTerms by remember { mutableStateOf(true) }
+
+    // Errores individuales por campo (AND-2.3b)
+    var fullNameError by remember { mutableStateOf<String?>(null) }
+    var phoneError by remember { mutableStateOf<String?>(null) }
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var neighborhoodError by remember { mutableStateOf<String?>(null) }
+    var addressError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var termsError by remember { mutableStateOf<String?>(null) }
+    var googleNotice by remember { mutableStateOf<String?>(null) }
+
+    // Diálogo accesible de lectura de Términos de Convivencia Vecinal y Política de Privacidad (AND-2.4)
+    var legalDialogTopic by remember { mutableStateOf<String?>(null) }
 
     val googleAccountPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -71,22 +124,32 @@ fun RegisterAccountScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
             if (!accountName.isNullOrBlank()) {
+                googleNotice = null
                 val derivedName = accountName.substringBefore("@")
                     .replace(".", " ")
                     .replace("_", " ")
                     .split(" ")
                     .filter { it.isNotBlank() }
                     .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
-                onContinueGoogle(accountName, derivedName.ifBlank { "Usuario Google" }, role)
+                val nbLabel = localityText.trim().ifBlank { "Ciudad de Mendoza, Mendoza" }
+                onContinueGoogle(
+                    accountName,
+                    derivedName.ifBlank { "Usuario Google" },
+                    role,
+                    nbLabel,
+                    address.trim()
+                )
             } else {
-                showGoogleDialog = true
+                googleNotice = "No se pudo leer la cuenta de Google del dispositivo. Completá tus datos manualmente abajo."
             }
         } else {
-            showGoogleDialog = true
+            googleNotice = "Cancelaste la selección de cuenta de Google. Podés registrarte completando tus datos abajo."
         }
     }
 
     val launchGoogleFlow: () -> Unit = {
+        googleNotice = null
+        onClearAuthError()
         runCatching {
             val intent = AccountManager.newChooseAccountIntent(
                 null,
@@ -99,18 +162,19 @@ fun RegisterAccountScreen(
             )
             googleAccountPickerLauncher.launch(intent)
         }.onFailure {
-            showGoogleDialog = true
+            googleNotice = "Tu teléfono no tiene cuentas de Google configuradas. Completá el formulario manual abajo."
         }
     }
 
-    if (showGoogleDialog) {
-        GoogleAccountInputDialog(
-            role = role,
-            onDismiss = { showGoogleDialog = false },
-            onConfirmAccount = { gEmail, gName, gRole ->
-                showGoogleDialog = false
-                onContinueGoogle(gEmail, gName, gRole)
-            }
+    if (legalDialogTopic != null) {
+        LegalTermsAccessibleDialog(
+            topic = legalDialogTopic!!,
+            onAcceptAndClose = {
+                acceptedTerms = true
+                termsError = null
+                legalDialogTopic = null
+            },
+            onDismiss = { legalDialogTopic = null }
         )
     }
 
@@ -138,7 +202,7 @@ fun RegisterAccountScreen(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver",
+                                contentDescription = "Volver atrás",
                                 tint = OnSurface
                             )
                         }
@@ -158,12 +222,13 @@ fun RegisterAccountScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 20.dp),
             contentPadding = PaddingValues(top = 20.dp, bottom = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
+            // 1. Encabezado de Bienvenida
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
-                        color = SurfaceContainerLow,
+                        color = SurfaceContainer,
                         shape = RoundedCornerShape(999.dp)
                     ) {
                         Row(
@@ -178,7 +243,7 @@ fun RegisterAccountScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "RED VECINAL SEGURA",
+                                text = "Red Vecinal Segura",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryContainer
@@ -203,10 +268,47 @@ fun RegisterAccountScreen(
                 }
             }
 
+            // 2. Selector de Rol con borde azul #1E40AF, fondo #EFF6FF y tilde verde #15803D (AND-2.3a)
+            if (!isLoginMode) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Me registro como:",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            StitchRegisterRoleCard(
+                                title = "Soy Vecino / Cliente",
+                                subtitle = "Busco oficios",
+                                icon = Icons.Default.PersonSearch,
+                                selected = role == "client",
+                                onClick = { role = "client" },
+                                modifier = Modifier.weight(1f)
+                            )
+                            StitchRegisterRoleCard(
+                                title = "Soy Profesional",
+                                subtitle = "Plomero, Gasista, etc.",
+                                icon = Icons.Default.Handyman,
+                                selected = role == "professional",
+                                onClick = { role = "professional" },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Botón rápido: Continuar con Google (sin popup falso)
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         onClick = launchGoogleFlow,
+                        enabled = !isLoading,
                         shape = RoundedCornerShape(12.dp),
                         color = SurfaceContainerLowest,
                         border = BorderStroke(2.dp, OutlineVariant),
@@ -232,16 +334,26 @@ fun RegisterAccountScreen(
                             )
                         }
                     }
-                    Text(
-                        text = "Acceso rápido con un solo toque usando tu cuenta de Gmail",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = OnSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    if (!googleNotice.isNullOrBlank()) {
+                        Surface(
+                            color = SurfaceContainerLow,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, PrimaryFixedDim),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = googleNotice!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OnSurface,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
                 }
             }
 
+            // 4. Divisor
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -249,7 +361,7 @@ fun RegisterAccountScreen(
                 ) {
                     HorizontalDivider(modifier = Modifier.weight(1f), color = OutlineVariant)
                     Text(
-                        text = if (isLoginMode) "O INGRESÁ CON TUS DATOS" else "O COMPLETÁ TUS DATOS A MANO",
+                        text = if (isLoginMode) "O ingresá con tus datos" else "O completá tus datos a mano",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = OnSurfaceVariant,
@@ -260,81 +372,367 @@ fun RegisterAccountScreen(
             }
 
             if (!isLoginMode) {
+                // 5. Nombre y Apellido Completo (>= 3 letras)
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "Me registro como:",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = OnSurface
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            StitchRegisterRoleCard(
-                                title = "Busco oficios",
-                                subtitle = "Cliente / Vecino",
-                                icon = Icons.Default.PersonSearch,
-                                selected = role == "client",
-                                onClick = { role = "client" },
-                                modifier = Modifier.weight(1f)
-                            )
-                            StitchRegisterRoleCard(
-                                title = "Soy profesional",
-                                subtitle = "Electricista, etc.",
-                                icon = Icons.Default.Handyman,
-                                selected = role == "professional",
-                                onClick = { role = "professional" },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-
-                item {
-                    StitchLabeledInputField(
+                    StitchValidatedInputField(
                         icon = Icons.Default.Person,
                         label = "Nombre y apellido completo",
                         value = fullName,
                         onValueChange = {
                             fullName = it
-                            validationError = null
+                            fullNameError = null
+                            onClearAuthError()
                         },
-                        placeholder = "Ej. Carlos Alberto Gómez"
+                        placeholder = "Ej. Carlos Alberto Gómez",
+                        isError = fullNameError != null,
+                        supportingText = fullNameError,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Words,
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Next
+                        )
                     )
                 }
 
+                // 6. Teléfono Celular Argentino con normalización +54 9 11
                 item {
-                    StitchLabeledInputField(
+                    val digitsCount = phone.count { it.isDigit() }
+                    val normalizedPreview = if (digitsCount >= 8) normalizeArgentineMobilePhone(phone) else null
+                    StitchValidatedInputField(
                         icon = Icons.Default.Call,
                         label = "Teléfono celular con prefijo",
-                        badgeText = "Para coordinar trabajos",
+                        badgeText = "Para coordinar por WhatsApp",
                         value = phone,
                         onValueChange = {
                             phone = it
-                            validationError = null
+                            phoneError = null
+                            onClearAuthError()
                         },
-                        placeholder = "Ej. 11 5544-3322 (para WhatsApp)",
-                        keyboardType = KeyboardType.Phone
+                        placeholder = "Ej. 11 5544-3322 o +54 9 11 5544-3322",
+                        isError = phoneError != null,
+                        supportingText = phoneError ?: normalizedPreview?.let { "Se guardará normalizado como: $it" },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Phone,
+                            imeAction = ImeAction.Next
+                        )
                     )
+                }
+
+                // 7. Localidad, Ciudad o Barrio en cualquier punto del país (Gran Mendoza, Luján Bs.As., CABA/GBA o interior)
+                item {
+                    val filteredSuggestions = remember(localityText) {
+                        val q = localityText.trim().lowercase()
+                        if (q.isEmpty()) {
+                            ARGENTINA_SUGGESTED_LOCALITIES.take(12)
+                        } else {
+                            ARGENTINA_SUGGESTED_LOCALITIES.filter {
+                                it.label.lowercase().contains(q) || it.zone.lowercase().contains(q)
+                            }.take(10)
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationCity,
+                                    contentDescription = null,
+                                    tint = Primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Localidad / Ciudad y Provincia",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = OnSurface
+                                )
+                            }
+                            Text(
+                                text = "Toda Argentina",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryContainer
+                            )
+                        }
+
+                        // Atajos rápidos para las zonas prioritarias de lanzamiento (Gran Mendoza, Luján Bs.As., AMBA)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                "Gran Mendoza" to "Ciudad de Mendoza, Mendoza",
+                                "Godoy Cruz" to "Godoy Cruz, Mendoza",
+                                "Luján (Bs. As.)" to "Luján, Buenos Aires"
+                            ).forEach { (chipLabel, chipValue) ->
+                                val isSelected = localityText.equals(chipValue, ignoreCase = true)
+                                Surface(
+                                    onClick = {
+                                        localityText = chipValue
+                                        neighborhoodError = null
+                                        verifiedGeocode = null
+                                    },
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = if (isSelected) Color(0xFFEFF6FF) else SurfaceContainer,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) PrimaryContainer else OutlineVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = chipLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) PrimaryContainer else OnSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        ExposedDropdownMenuBox(
+                            expanded = neighborhoodExpanded && filteredSuggestions.isNotEmpty(),
+                            onExpandedChange = { neighborhoodExpanded = !neighborhoodExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = localityText,
+                                onValueChange = {
+                                    localityText = it
+                                    neighborhoodError = null
+                                    verifiedGeocode = null
+                                    neighborhoodExpanded = true
+                                    onClearAuthError()
+                                },
+                                singleLine = true,
+                                placeholder = { Text("Ej. Godoy Cruz, Mendoza o Luján, Buenos Aires") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = neighborhoodExpanded)
+                                },
+                                isError = neighborhoodError != null,
+                                supportingText = {
+                                    if (neighborhoodError != null) {
+                                        Text(
+                                            text = neighborhoodError!!,
+                                            color = ErrorColor,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Podés escribir cualquier ciudad o localidad del país o elegir una sugerencia.",
+                                            color = OnSurfaceVariant
+                                        )
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = SurfaceContainerLowest,
+                                    unfocusedContainerColor = SurfaceContainerLowest,
+                                    focusedBorderColor = PrimaryContainer,
+                                    unfocusedBorderColor = OutlineVariant,
+                                    errorBorderColor = ErrorColor
+                                ),
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                            )
+
+                            ExposedDropdownMenu(
+                                expanded = neighborhoodExpanded && filteredSuggestions.isNotEmpty(),
+                                onDismissRequest = { neighborhoodExpanded = false },
+                                modifier = Modifier.background(SurfaceContainerLowest)
+                            ) {
+                                filteredSuggestions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = option.label,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = OnSurface
+                                                )
+                                                Text(
+                                                    text = option.zone,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = OnSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            localityText = option.label
+                                            neighborhoodError = null
+                                            verifiedGeocode = null
+                                            neighborhoodExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 8. Dirección (Calle y altura) + Botón de Validación Geográfica en vivo
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StitchValidatedInputField(
+                            icon = Icons.Default.Home,
+                            label = "Calle y altura aproximada",
+                            badgeText = "Validación por mapa",
+                            value = address,
+                            onValueChange = {
+                                address = it
+                                addressError = null
+                                verifiedGeocode = null
+                                onClearAuthError()
+                            },
+                            placeholder = "Ej. San Martín 1250 o Av. Las Heras 450",
+                            isError = addressError != null,
+                            supportingText = addressError,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Next
+                            )
+                        )
+
+                        OutlinedButton(
+                            onClick = {
+                                val cleanLoc = localityText.trim()
+                                val cleanAddr = address.trim()
+                                if (cleanLoc.length < 3) {
+                                    neighborhoodError = "Ingresá tu localidad y provincia (ej. Luján, Buenos Aires o Godoy Cruz, Mendoza)."
+                                } else if (cleanAddr.length < 3) {
+                                    addressError = "Ingresá tu calle y altura para validar en el mapa."
+                                } else {
+                                    isGeocoding = true
+                                    onValidateAddressGeocode(cleanLoc, cleanAddr) { result ->
+                                        isGeocoding = false
+                                        verifiedGeocode = result
+                                        if (result.neighborhood.isNotBlank()) {
+                                            localityText = result.neighborhood
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isGeocoding && !isLoading,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.5.dp, PrimaryContainer),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            if (isGeocoding) {
+                                CircularProgressIndicator(
+                                    color = PrimaryContainer,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Validando ubicación en el mapa...",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryContainer
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.MyLocation,
+                                    contentDescription = null,
+                                    tint = PrimaryContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Validar dirección en el mapa",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryContainer
+                                )
+                            }
+                        }
+
+                        verifiedGeocode?.let { geo ->
+                            Surface(
+                                color = Color(0xFFF0FDF4),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFF15803D).copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(0xFF15803D),
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Ubicación verificada",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Ubicación validada: ${geo.formatted_address}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF14532D)
+                                        )
+                                        Text(
+                                            text = String.format(
+                                                Locale.US,
+                                                "Zona: %s · Coord: %.4f, %.4f",
+                                                geo.neighborhood.ifBlank { localityText },
+                                                geo.lat,
+                                                geo.lng
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF166534)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
+            // 9. Correo Electrónico (Patterns.EMAIL_ADDRESS)
             item {
-                StitchLabeledInputField(
+                StitchValidatedInputField(
                     icon = Icons.Default.Mail,
                     label = if (isLoginMode) "Correo electrónico o teléfono" else "Correo electrónico",
                     value = email,
                     onValueChange = {
                         email = it
-                        validationError = null
+                        emailError = null
+                        onClearAuthError()
                     },
                     placeholder = if (isLoginMode) "Ej. carlos@correo.com o 11 5544-3322" else "Ej. carlos@correo.com",
-                    keyboardType = KeyboardType.Email
+                    isError = emailError != null,
+                    supportingText = emailError,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next
+                    )
                 )
             }
 
+            // 10. Contraseña (>= 6 caracteres con ojito mostrar/ocultar)
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
@@ -358,11 +756,26 @@ fun RegisterAccountScreen(
                         value = password,
                         onValueChange = {
                             password = it
-                            validationError = null
+                            passwordError = null
+                            onClearAuthError()
                         },
                         placeholder = { Text("Al menos 6 números o letras") },
                         singleLine = true,
+                        isError = passwordError != null,
+                        supportingText = if (passwordError != null) {
+                            {
+                                Text(
+                                    text = passwordError!!,
+                                    color = ErrorColor,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        } else null,
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
                         trailingIcon = {
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                 Icon(
@@ -377,7 +790,8 @@ fun RegisterAccountScreen(
                             focusedContainerColor = SurfaceContainerLowest,
                             unfocusedContainerColor = SurfaceContainerLowest,
                             focusedBorderColor = PrimaryContainer,
-                            unfocusedBorderColor = OutlineVariant
+                            unfocusedBorderColor = OutlineVariant,
+                            errorBorderColor = ErrorColor
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -386,113 +800,282 @@ fun RegisterAccountScreen(
                 }
             }
 
-            if (validationError != null) {
+            // 11. Sello de Privacidad y Protección + Aceptación de Términos de Convivencia Vecinal (AND-2.4)
+            if (!isLoginMode) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Surface(
+                            color = SecondaryFixed.copy(alpha = 0.30f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, SecondaryFixedDim.copy(alpha = 0.6f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = Secondary,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .padding(top = 2.dp)
+                                )
+                                Text(
+                                    text = "Tus datos están protegidos. Nunca te enviaremos publicidad molesta ni compartiremos tu teléfono sin tu permiso.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = OnSurface
+                                )
+                            }
+                        }
+
+                        // Bloque interactivo de Términos de Convivencia Vecinal y Política de Privacidad
+                        Surface(
+                            color = if (termsError != null) ErrorContainer.copy(alpha = 0.45f) else SurfaceContainerLowest,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                width = 1.5.dp,
+                                color = if (termsError != null) ErrorColor else OutlineVariant
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Checkbox(
+                                        checked = acceptedTerms,
+                                        onCheckedChange = {
+                                            acceptedTerms = it
+                                            termsError = null
+                                        },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = PrimaryContainer,
+                                            uncheckedColor = OnSurfaceVariant
+                                        )
+                                    )
+                                    Text(
+                                        text = "Al registrarme, acepto las normas de respeto y seguridad de la comunidad:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = OnSurface
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    TextButton(
+                                        onClick = { legalDialogTopic = "terms" },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "Términos de Convivencia Vecinal",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = PrimaryContainer,
+                                            textDecoration = TextDecoration.Underline
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = { legalDialogTopic = "privacy" },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "Política de Privacidad",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = PrimaryContainer,
+                                            textDecoration = TextDecoration.Underline
+                                        )
+                                    }
+                                }
+
+                                if (termsError != null) {
+                                    Text(
+                                        text = termsError!!,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = ErrorColor,
+                                        modifier = Modifier.padding(horizontal = 12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 12. Error de API inline (si el correo ya existe o falló la red)
+            if (!authError.isNullOrBlank()) {
                 item {
                     Surface(
                         color = ErrorContainer,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = validationError!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = OnErrorContainer,
-                            modifier = Modifier.padding(14.dp)
-                        )
-                    }
-                }
-            }
-
-            if (!isLoginMode) {
-                item {
-                    Surface(
-                        color = SecondaryFixed.copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, SecondaryContainer.copy(alpha = 0.3f)),
+                        border = BorderStroke(1.dp, ErrorColor.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.Top,
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.VerifiedUser,
-                                contentDescription = null,
-                                tint = Secondary,
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .padding(top = 2.dp)
+                                imageVector = Icons.Default.ErrorOutline,
+                                contentDescription = "Error",
+                                tint = OnErrorContainer,
+                                modifier = Modifier.size(22.dp)
                             )
                             Text(
-                                text = "Tus datos están protegidos. Solo compartimos tu teléfono cuando vos decidís contactar a un profesional o vecino.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = OnSurface
+                                text = authError,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = OnErrorContainer
                             )
                         }
                     }
                 }
             }
 
+            // 13. Botón Primario CTA de 56dp con estado de carga
             item {
                 Button(
                     onClick = {
+                        onClearAuthError()
                         if (isLoginMode) {
-                            if (email.trim().isBlank() || password.isBlank()) {
-                                validationError = "Completá tu correo/teléfono y tu contraseña para ingresar."
-                                return@Button
+                            var hasErr = false
+                            if (email.trim().isBlank()) {
+                                emailError = "Ingresá tu correo electrónico o teléfono celular."
+                                hasErr = true
                             }
-                            onSubmitLogin(email.trim(), password)
+                            if (password.isBlank()) {
+                                passwordError = "Ingresá tu contraseña."
+                                hasErr = true
+                            }
+                            if (!hasErr) {
+                                onSubmitLogin(email.trim(), password)
+                            }
                         } else {
-                            if (fullName.trim().length < 3) {
-                                validationError = "Ingresá tu nombre y apellido completo."
-                                return@Button
+                            var hasError = false
+                            val cleanName = fullName.trim()
+                            val lettersCount = cleanName.count { it.isLetter() }
+                            if (lettersCount < 3) {
+                                fullNameError = "Ingresá tu nombre y apellido completo (al menos 3 letras)."
+                                hasError = true
                             }
-                            if (phone.trim().length < 6) {
-                                validationError = "Ingresá tu teléfono celular con prefijo para coordinar trabajos."
-                                return@Button
+
+                            val digitsOnly = phone.filter { it.isDigit() }
+                            val hasInvalidLetters = phone.any { it.isLetter() }
+                            if (hasInvalidLetters || digitsOnly.length < 8 || digitsOnly.length > 15) {
+                                phoneError = "Ingresá un celular argentino válido con prefijo (ej. 11 5544-3322)."
+                                hasError = true
                             }
-                            if (!email.trim().contains("@")) {
-                                validationError = "Ingresá un correo electrónico válido (ej. nombre@correo.com)."
-                                return@Button
+
+                            val cleanEmail = email.trim()
+                            if (cleanEmail.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+                                emailError = "Ingresá un correo electrónico válido (ej. carlos@correo.com)."
+                                hasError = true
                             }
+
+                            val cleanLocality = localityText.trim()
+                            if (cleanLocality.length < 3) {
+                                neighborhoodError = "Ingresá tu localidad y provincia (ej. Luján, Buenos Aires o Godoy Cruz, Mendoza)."
+                                hasError = true
+                            }
+
+                            val cleanAddress = address.trim()
+                            if (cleanAddress.length < 4) {
+                                addressError = "Ingresá tu calle y altura aproximada (ej. San Martín 1250)."
+                                hasError = true
+                            }
+
                             if (password.trim().length < 6) {
-                                validationError = "La contraseña debe tener al menos 6 números o letras."
-                                return@Button
+                                passwordError = "La contraseña debe tener al menos 6 números o letras."
+                                hasError = true
                             }
-                            onSubmitManual(
-                                RegisterUserInputDto(
-                                    full_name = fullName.trim(),
-                                    phone = phone.trim(),
-                                    email = email.trim(),
-                                    password = password,
-                                    role = role
+
+                            if (!acceptedTerms) {
+                                termsError = "Debés aceptar los Términos de Convivencia Vecinal y la Política de Privacidad."
+                                hasError = true
+                            }
+
+                            if (!hasError) {
+                                val normalizedPhone = normalizeArgentineMobilePhone(phone)
+                                val geo = verifiedGeocode
+                                val finalNeighborhood = geo?.neighborhood?.ifBlank { cleanLocality } ?: cleanLocality
+                                val combinedAddress = geo?.formatted_address?.ifBlank {
+                                    "$cleanAddress, $finalNeighborhood"
+                                } ?: if (cleanAddress.lowercase().contains(finalNeighborhood.substringBefore(",").lowercase())) {
+                                    cleanAddress
+                                } else {
+                                    "$cleanAddress, $finalNeighborhood"
+                                }
+                                onSubmitManual(
+                                    RegisterUserInputDto(
+                                        full_name = cleanName,
+                                        phone = normalizedPhone,
+                                        email = cleanEmail,
+                                        password = password,
+                                        role = role,
+                                        auth_provider = "manual",
+                                        neighborhood = finalNeighborhood,
+                                        address = cleanAddress,
+                                        saved_address = combinedAddress,
+                                        saved_lat = geo?.lat ?: 0.0,
+                                        saved_lng = geo?.lng ?: 0.0
+                                    )
                                 )
-                            )
+                            }
                         }
                     },
+                    enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
                 ) {
-                    Text(
-                        text = if (isLoginMode) "Iniciar sesión" else "Crear mi cuenta",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = null,
-                        tint = Color.White
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = if (isLoginMode) "Ingresando..." else "Creando tu cuenta...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                    } else {
+                        Text(
+                            text = if (isLoginMode) "Iniciar sesión" else "Crear mi cuenta gratis",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = Color.White
+                        )
+                    }
                 }
             }
 
+            // 14. Pivot inferior "¿Ya tenés una cuenta? Iniciar sesión"
             item {
                 Surface(
                     color = SurfaceContainerLow,
@@ -513,7 +1096,7 @@ fun RegisterAccountScreen(
                         TextButton(
                             onClick = {
                                 isLoginMode = !isLoginMode
-                                validationError = null
+                                onClearAuthError()
                             }
                         ) {
                             Text(
@@ -539,8 +1122,10 @@ private fun StitchRegisterRoleCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = if (selected) SurfaceContainerLow else SurfaceContainerLowest
+    // AND-2.3a: Borde azul (#1E40AF), fondo #EFF6FF y tilde verde (#15803D)
+    val bgColor = if (selected) Color(0xFFEFF6FF) else SurfaceContainerLowest
     val borderColor = if (selected) PrimaryContainer else OutlineVariant
+    val emeraldGreen = Color(0xFF15803D)
 
     Surface(
         onClick = onClick,
@@ -554,38 +1139,39 @@ private fun StitchRegisterRoleCard(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = if (selected) PrimaryContainer else OnSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(22.dp)
                         .clip(CircleShape)
-                        .background(if (selected) PrimaryContainer else Color.Transparent)
+                        .background(if (selected) emeraldGreen else Color.Transparent)
                         .border(
                             width = 2.dp,
-                            color = if (selected) PrimaryContainer else Outline,
+                            color = if (selected) emeraldGreen else Outline,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     if (selected) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(Color.White)
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Rol seleccionado",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
-                Icon(
-                    imageVector = icon,
-                    contentDescription = title,
-                    tint = if (selected) Primary else OnSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
-                )
             }
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
@@ -602,14 +1188,16 @@ private fun StitchRegisterRoleCard(
 }
 
 @Composable
-private fun StitchLabeledInputField(
+private fun StitchValidatedInputField(
     icon: ImageVector,
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
     badgeText: String? = null,
-    keyboardType: KeyboardType = KeyboardType.Text
+    isError: Boolean = false,
+    supportingText: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
@@ -624,7 +1212,7 @@ private fun StitchLabeledInputField(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Primary,
+                    tint = if (isError) ErrorColor else Primary,
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
@@ -648,17 +1236,120 @@ private fun StitchLabeledInputField(
             onValueChange = onValueChange,
             placeholder = { Text(placeholder) },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            isError = isError,
+            supportingText = if (!supportingText.isNullOrBlank()) {
+                {
+                    Text(
+                        text = supportingText,
+                        color = if (isError) ErrorColor else Secondary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else null,
+            keyboardOptions = keyboardOptions,
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = SurfaceContainerLowest,
                 unfocusedContainerColor = SurfaceContainerLowest,
                 focusedBorderColor = PrimaryContainer,
-                unfocusedBorderColor = OutlineVariant
+                unfocusedBorderColor = OutlineVariant,
+                errorBorderColor = ErrorColor
             ),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
         )
     }
+}
+
+@Composable
+private fun LegalTermsAccessibleDialog(
+    topic: String,
+    onAcceptAndClose: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isTerms = topic == "terms"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceContainerLowest,
+        icon = {
+            Icon(
+                imageVector = if (isTerms) Icons.Default.Gavel else Icons.Default.Shield,
+                contentDescription = null,
+                tint = PrimaryContainer,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                text = if (isTerms) "Términos de Convivencia Vecinal" else "Política de Privacidad y Datos",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold,
+                color = OnSurface,
+                textAlign = TextAlign.Center
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (isTerms) {
+                    Text(
+                        text = "1. Respeto y Puntualidad Barrial: Guía de Oficios conecta a vecinos con trabajadores verificados de su propia zona. Ambas partes se comprometen a un trato cordial, puntual y respetuoso.",
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                        color = OnSurface
+                    )
+                    Text(
+                        text = "2. Identidad y Matrículas Verificadas: Los profesionales que ofrecen servicios de gas, electricidad o plomería declaran contar con su DNI verificado y, cuando el rubro lo exige, su matrícula vigente.",
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                        color = OnSurface
+                    )
+                    Text(
+                        text = "3. Presupuestos Claros y Sin Sorpresas: El valor de la visita técnica se informa antes de iniciar el viaje. Cualquier arreglo adicional debe ser acordado previamente con el vecino.",
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                        color = OnSurface
+                    )
+                } else {
+                    Text(
+                        text = "1. Protección de tu Teléfono y Dirección: Tu número de WhatsApp y tu calle solo se comparten con el profesional cuando vos decidís iniciar una solicitud de contacto.",
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                        color = OnSurface
+                    )
+                    Text(
+                        text = "2. Cero Publicidad Molesta: Guía de Oficios nunca vende ni cede tus datos personales a terceros ni envía spam publicitario.",
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                        color = OnSurface
+                    )
+                    Text(
+                        text = "3. Seguridad de Contraseñas: Todas las claves se almacenan cifradas con estándar criptográfico bcrypt y sesiones protegidas.",
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                        color = OnSurface
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onAcceptAndClose,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.height(48.dp)
+            ) {
+                Text(
+                    text = "Aceptar y continuar",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cerrar", color = OnSurfaceVariant, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
 }

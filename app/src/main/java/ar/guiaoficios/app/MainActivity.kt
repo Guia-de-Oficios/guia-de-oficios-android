@@ -58,8 +58,16 @@ fun GuiaDeOficiosApp(
             (currentRoute.startsWith("role_selection") || currentRoute.startsWith("welcome"))
         ) {
             mainViewModel.refreshInitialData()
-            navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+            if (uiState.currentUser.role == "professional") {
+                val proId = uiState.currentUser.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+                mainViewModel.loadProfessionalDashboard(proId)
+                navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
+                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                }
+            } else {
+                navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                }
             }
         }
     }
@@ -182,26 +190,37 @@ fun GuiaDeOficiosApp(
                                 role = role
                             ) { user ->
                                 mainViewModel.refreshInitialData()
-                                if (user.role == "professional" && !user.professional_id.isNullOrBlank()) {
-                                    mainViewModel.loadProfessionalDashboard(user.professional_id)
-                                }
-                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                if (user.role == "professional") {
+                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+                                    mainViewModel.loadProfessionalDashboard(proId)
+                                    navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
+                                } else {
+                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
                                 }
                             }
                         },
                         onLoginWithCredentials = { identifier, password ->
                             mainViewModel.loginWithEmail(identifier, password) { user ->
                                 mainViewModel.refreshInitialData()
-                                if (user.role == "professional" && !user.professional_id.isNullOrBlank()) {
-                                    mainViewModel.loadProfessionalDashboard(user.professional_id)
-                                }
-                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                if (user.role == "professional") {
+                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+                                    mainViewModel.loadProfessionalDashboard(proId)
+                                    navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
+                                } else {
+                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
                                 }
                             }
                         },
                         onNavigateToRegister = { role ->
+                            mainViewModel.clearAuthError()
                             navController.navigate(StitchScreen.RegisterAccount.createRoute(role))
                         },
                         onBackToRoleSelection = {
@@ -210,7 +229,7 @@ fun GuiaDeOficiosApp(
                     )
                 }
 
-                // 2. Pantalla 2 Stitch: Registro (Google o Manual) e Inicio de Sesión
+                // 2. Vista #3 Stitch: Registro (Google o Manual) con Barrio, Dirección y Términos Vecinales
                 composable(
                     route = StitchScreen.RegisterAccount.route,
                     arguments = listOf(navArgument("role") { type = NavType.StringType })
@@ -218,19 +237,30 @@ fun GuiaDeOficiosApp(
                     val role = backStackEntry.arguments?.getString("role") ?: "client"
                     RegisterAccountScreen(
                         initialRole = role,
-                        onContinueGoogle = { email, fullName, selectedRole ->
+                        isLoading = uiState.isLoading,
+                        authError = uiState.authError,
+                        onClearAuthError = { mainViewModel.clearAuthError() },
+                        onValidateAddressGeocode = { locality, address, onResult ->
+                            mainViewModel.validateAddressGeocode(locality, address, onResult)
+                        },
+                        onContinueGoogle = { email, fullName, selectedRole, neighborhood, address ->
                             mainViewModel.authenticateWithGoogle(
                                 email = email,
                                 fullName = fullName,
-                                role = selectedRole
+                                role = selectedRole,
+                                neighborhood = neighborhood,
+                                address = address
                             ) { user ->
                                 mainViewModel.refreshInitialData()
                                 if (user.role == "professional") {
                                     val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    mainViewModel.loadProfessionalDashboard(proId)
-                                }
-                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId)) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
+                                } else {
+                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
                                 }
                             }
                         },
@@ -239,10 +269,13 @@ fun GuiaDeOficiosApp(
                                 mainViewModel.refreshInitialData()
                                 if (user.role == "professional") {
                                     val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    mainViewModel.loadProfessionalDashboard(proId)
-                                }
-                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId)) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
+                                } else {
+                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
                                 }
                             }
                         },
@@ -252,9 +285,13 @@ fun GuiaDeOficiosApp(
                                 if (user.role == "professional") {
                                     val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
                                     mainViewModel.loadProfessionalDashboard(proId)
-                                }
-                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
+                                } else {
+                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                                    }
                                 }
                             }
                         },
