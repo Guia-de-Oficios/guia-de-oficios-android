@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.HelpOutline
@@ -34,31 +35,39 @@ import androidx.compose.ui.unit.sp
 import ar.guiaoficios.app.ui.theme.*
 
 /**
- * Logo oficial provisional de Guía de Oficios extraído de `logo_provisional_gdo/code.html`:
- * - Círculo azul cobalto (#1E40AF) con anillo interno sutil y siglas "GDO" en Plus Jakarta Sans Bold
- * - Insignia circular verde esmeralda (#15803D) de verificación en esquina inferior derecha con tilde blanco
- * - Texto de marca "Guía de Oficios" + subtítulo "RED VECINAL DE CONFIANZA"
+ * VISTA #1 STITCH (`[AND-1.2]`): Escudo e insignia oficial `GdoLogoBadge`
+ * Respeta `logo_provisional_gdo/code.html`:
+ * - Escudo circular azul cobalto (`#1E40AF`) con borde blanco sutil
+ * - Ícono de llave inglesa blanca o siglas "GDO" en el centro
+ * - Círculo esmeralda (`#15803D`) con tilde blanco en la esquina inferior derecha
  */
 @Composable
-fun GdoBrandLogo(
+fun GdoLogoBadge(
     modifier: Modifier = Modifier,
-    centered: Boolean = false,
-    badgeSize: Dp = 44.dp
+    badgeSize: Dp = 48.dp,
+    showWrenchIcon: Boolean = false
 ) {
-    val content: @Composable () -> Unit = {
+    Box(
+        modifier = modifier.size(badgeSize),
+        contentAlignment = Alignment.Center
+    ) {
+        // Círculo contenedor principal #1E40AF
         Box(
-            modifier = Modifier.size(badgeSize),
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(PrimaryContainer)
+                .border(1.5.dp, Color.White.copy(alpha = 0.25f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            // Círculo principal #1E40AF
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(CircleShape)
-                    .background(PrimaryContainer)
-                    .border(1.5.dp, Color.White.copy(alpha = 0.22f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
+            if (showWrenchIcon) {
+                Icon(
+                    imageVector = Icons.Default.Build,
+                    contentDescription = "Guía de Oficios",
+                    tint = Color.White,
+                    modifier = Modifier.size(badgeSize * 0.48f)
+                )
+            } else {
                 Text(
                     text = "GDO",
                     color = Color.White,
@@ -67,24 +76,44 @@ fun GdoBrandLogo(
                     letterSpacing = (-0.5).sp
                 )
             }
-            // Insignia verde #15803D de verificación en esquina inferior derecha
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(badgeSize * 0.36f)
-                    .clip(CircleShape)
-                    .background(WhatsAppActionGreen)
-                    .border(2.dp, Color.White, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "Verificado",
-                    tint = Color.White,
-                    modifier = Modifier.size(badgeSize * 0.22f)
-                )
-            }
         }
+        // Insignia verde esmeralda #15803D de verificación en esquina inferior derecha
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(badgeSize * 0.36f)
+                .clip(CircleShape)
+                .background(WhatsAppActionGreen)
+                .border(2.dp, Color.White, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Verificado",
+                tint = Color.White,
+                modifier = Modifier.size(badgeSize * 0.22f)
+            )
+        }
+    }
+}
+
+/**
+ * Logo oficial completo de Guía de Oficios extraído de `logo_provisional_gdo/code.html`:
+ * - `GdoLogoBadge` (#1E40AF + tilde #15803D)
+ * - Texto de marca "Guía de Oficios" + subtítulo "RED VECINAL DE CONFIANZA"
+ */
+@Composable
+fun GdoBrandLogo(
+    modifier: Modifier = Modifier,
+    centered: Boolean = false,
+    badgeSize: Dp = 44.dp,
+    showWrenchIcon: Boolean = false
+) {
+    val content: @Composable () -> Unit = {
+        GdoLogoBadge(
+            badgeSize = badgeSize,
+            showWrenchIcon = showWrenchIcon
+        )
 
         if (centered) {
             Spacer(modifier = Modifier.height(10.dp))

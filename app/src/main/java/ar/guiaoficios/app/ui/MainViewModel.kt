@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 
 data class GuiaUiState(
     val isLoading: Boolean = false,
+    val authError: String? = null,
     val statusMessage: String? = null,
     val isSessionChecked: Boolean = false,
     val isAuthenticated: Boolean = false,
@@ -151,6 +152,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(statusMessage = null) }
     }
 
+    fun clearAuthError() {
+        _uiState.update { it.copy(authError = null) }
+    }
+
+    fun requestPasswordRecovery(identifier: String, onDone: (String) -> Unit = {}) {
+        val clean = identifier.trim()
+        val msg = "Enviamos las instrucciones de recuperación a $clean. Si necesitás asistencia inmediata llamá gratis al 0800-444-OFICIO."
+        _uiState.update { it.copy(statusMessage = msg) }
+        onDone(msg)
+    }
+
     private fun extractApiErrorMessage(e: Exception, fallbackPrefix: String): String {
         if (e is retrofit2.HttpException) {
             val rawBody = runCatching { e.response()?.errorBody()?.string() }.getOrNull().orEmpty()
@@ -164,13 +176,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun registerManual(input: RegisterUserInputDto, onSuccess: (UserDto) -> Unit) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, statusMessage = null) }
+            _uiState.update { it.copy(isLoading = true, authError = null, statusMessage = null) }
             try {
                 val authRes = api.registerUser(input)
                 sessionManager.saveAuthSession(authRes.token, authRes.user)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        authError = null,
                         isAuthenticated = true,
                         currentUser = authRes.user,
                         statusMessage = "¡Cuenta creada con éxito, ${authRes.user.full_name.substringBefore(" ")}!"
@@ -178,10 +191,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 onSuccess(authRes.user)
             } catch (e: Exception) {
+                val errMsg = extractApiErrorMessage(e, "No se pudo registrar la cuenta")
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        statusMessage = extractApiErrorMessage(e, "No se pudo registrar la cuenta")
+                        authError = errMsg,
+                        statusMessage = errMsg
                     )
                 }
             }
@@ -190,13 +205,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loginWithEmail(emailOrPhone: String, password: String, onSuccess: (UserDto) -> Unit) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, statusMessage = null) }
+            _uiState.update { it.copy(isLoading = true, authError = null, statusMessage = null) }
             try {
                 val authRes = api.loginUser(LoginInputDto(email = emailOrPhone.trim(), password = password))
                 sessionManager.saveAuthSession(authRes.token, authRes.user)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        authError = null,
                         isAuthenticated = true,
                         currentUser = authRes.user,
                         statusMessage = "¡Hola de nuevo, ${authRes.user.full_name.substringBefore(" ")}!"
@@ -204,10 +220,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 onSuccess(authRes.user)
             } catch (e: Exception) {
+                val errMsg = extractApiErrorMessage(e, "No se pudo iniciar sesión")
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        statusMessage = extractApiErrorMessage(e, "No se pudo iniciar sesión")
+                        authError = errMsg
                     )
                 }
             }
