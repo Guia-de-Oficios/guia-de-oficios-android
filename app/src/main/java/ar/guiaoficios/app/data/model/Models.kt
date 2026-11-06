@@ -302,9 +302,13 @@ data class ProfessionalDetailDto(
     val dni_front_url: String? = null,
     val dni_back_url: String? = null,
     val license_doc_url: String? = null,
-    val portfolio: List<PortfolioItemDto> = emptyList(),
-    val reviews: List<ReviewDto> = emptyList()
-)
+    val portfolio: List<PortfolioItemDto>? = emptyList(),
+    val reviews: List<ReviewDto>? = emptyList()
+) {
+    val safeSpecialties: List<String> get() = specialties ?: emptyList()
+    val safePortfolio: List<PortfolioItemDto> get() = portfolio ?: emptyList()
+    val safeReviews: List<ReviewDto> get() = reviews ?: emptyList()
+}
 
 data class OnboardingVerificationInputDto(
     val primary_category_id: Int,
