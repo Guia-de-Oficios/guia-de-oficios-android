@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Handyman
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ar.guiaoficios.app.data.model.ARGENTINA_SUGGESTED_LOCALITIES
 import ar.guiaoficios.app.data.model.GeocodeResultDto
+import ar.guiaoficios.app.data.model.GeocodeSuggestionDto
 import ar.guiaoficios.app.data.model.NeighborhoodOption
 import ar.guiaoficios.app.data.model.RegisterUserInputDto
 import ar.guiaoficios.app.data.model.normalizeArgentineMobilePhone
@@ -61,21 +64,27 @@ import ar.guiaoficios.app.ui.components.GdoBrandLogo
 import ar.guiaoficios.app.ui.components.GoogleColorIcon
 import ar.guiaoficios.app.ui.theme.*
 import java.util.Locale
+import kotlinx.coroutines.delay
+
+val PROFESSIONAL_TRADE_CATEGORIES = listOf(
+    1 to "Plomería",
+    2 to "Gasista Matriculado",
+    3 to "Electricidad",
+    4 to "Aire Acondicionado",
+    5 to "Albañilería y Construcción",
+    6 to "Pintura e Impermeabilización",
+    7 to "Cerrajería",
+    8 to "Jardinería y Poda"
+)
 
 // =============================================================================
 // VISTA #3 STITCH (`[AND-2.3]` & `[AND-2.4]`): registro_google_o_manual
-// - Selector de Rol ('Soy Vecino / Cliente' vs 'Soy Profesional') con borde azul
-//   #1E40AF, fondo #EFF6FF y tilde verde #15803D
-// - Validación individual por campo con `isError` + `supportingText`:
-//   (1) Nombre y apellido (>= 3 letras)
-//   (2) Teléfono celular argentino (normalizando +54 9 ...)
-//   (3) Email válido (Patterns.EMAIL_ADDRESS)
-//   (4) Localidad / Ciudad / Barrio abierto a todo el país (Gran Mendoza, Luján Bs.As., CABA/GBA o cualquier localidad)
-//   (5) Dirección (calle y altura) con geocodificación dinámica en vivo
-//   (6) Contraseña (>= 6 caracteres con ojito mostrar/ocultar)
-// - Bloque de aceptación de 'Términos de Convivencia Vecinal y Política de Privacidad'
-//   con diálogo de lectura accesible
-// - Sin GoogleAccountInputDialog falso
+// - Muestra un formulario diferenciado según el rol elegido obligatoriamente en
+//   la pantalla de Bienvenida ('client' vs 'professional'), sin repetir el selector.
+// - Sugerencias de autocompletado en vivo (sin robo de foco del teclado) tanto en
+//   Localidad/Ciudad como en Dirección normalizada (Calle y altura).
+// - Continuar con Google captura solo Nombre, Apellido y Correo para luego pedir
+//   completar los datos faltantes desde Inicio / Mi Cuenta.
 // =============================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,21 +95,36 @@ fun RegisterAccountScreen(
     authError: String? = null,
     onClearAuthError: () -> Unit = {},
     onValidateAddressGeocode: (locality: String, address: String, onResult: (GeocodeResultDto) -> Unit) -> Unit = { _, _, _ -> },
+    onSuggestGeocode: (type: String, locality: String, query: String, onResult: (List<GeocodeSuggestionDto>) -> Unit) -> Unit = { _, _, _, _ -> },
     onContinueGoogle: (email: String, fullName: String, role: String, neighborhood: String, address: String) -> Unit,
     onSubmitManual: (RegisterUserInputDto) -> Unit,
     onSubmitLogin: (emailOrPhone: String, password: String) -> Unit = { _, _ -> },
     onBack: () -> Unit
 ) {
     var isLoginMode by remember { mutableStateOf(initialLoginMode) }
-    var role by remember { mutableStateOf(initialRole) }
+    val role = initialRole
     var fullName by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var localityText by remember { mutableStateOf("Ciudad de Mendoza, Mendoza") }
-    var neighborhoodExpanded by remember { mutableStateOf(false) }
+
+    // Campos de Localidad y Dirección con sugerencias normalizadas en vivo (sin robo de foco)
+    var localityText by remember { mutableStateOf("") }
+    var localitySuggestions by remember { mutableStateOf<List<GeocodeSuggestionDto>>(emptyList()) }
+    var suppressLocalitySuggest by remember { mutableStateOf(false) }
+
     var address by remember { mutableStateOf("") }
+    var addressSuggestions by remember { mutableStateOf<List<GeocodeSuggestionDto>>(emptyList()) }
+    var suppressAddressSuggest by remember { mutableStateOf(false) }
+
     var verifiedGeocode by remember { mutableStateOf<GeocodeResultDto?>(null) }
     var isGeocoding by remember { mutableStateOf(false) }
+
+    // Campos exclusivos para el formulario de Profesional
+    var selectedCategoryId by remember { mutableStateOf(1) }
+    var tradeTitle by remember { mutableStateOf("") }
+    var coverageRadiusKm by remember { mutableStateOf(10) }
+    var tradeTitleError by remember { mutableStateOf<String?>(null) }
+
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var acceptedTerms by remember { mutableStateOf(true) }
@@ -118,6 +142,40 @@ fun RegisterAccountScreen(
     // Diálogo accesible de lectura de Términos de Convivencia Vecinal y Política de Privacidad (AND-2.4)
     var legalDialogTopic by remember { mutableStateOf<String?>(null) }
 
+    // Autocompletado debounced de Localidades (300ms)
+    LaunchedEffect(localityText) {
+        if (suppressLocalitySuggest) {
+            suppressLocalitySuggest = false
+            return@LaunchedEffect
+        }
+        val clean = localityText.trim()
+        if (clean.length < 2) {
+            localitySuggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(280)
+        onSuggestGeocode("locality", "", clean) { results ->
+            localitySuggestions = results
+        }
+    }
+
+    // Autocompletado debounced de Direcciones normalizadas (320ms)
+    LaunchedEffect(address, localityText) {
+        if (suppressAddressSuggest) {
+            suppressAddressSuggest = false
+            return@LaunchedEffect
+        }
+        val cleanAddr = address.trim()
+        if (cleanAddr.length < 3) {
+            addressSuggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(320)
+        onSuggestGeocode("address", localityText.trim(), cleanAddr) { results ->
+            addressSuggestions = results
+        }
+    }
+
     val googleAccountPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -131,13 +189,13 @@ fun RegisterAccountScreen(
                     .split(" ")
                     .filter { it.isNotBlank() }
                     .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
-                val nbLabel = localityText.trim().ifBlank { "Ciudad de Mendoza, Mendoza" }
+                // Bug 4: Con Google solo tomamos Nombre y Correo; luego el usuario completa su dirección/teléfono en su perfil
                 onContinueGoogle(
                     accountName,
                     derivedName.ifBlank { "Usuario Google" },
                     role,
-                    nbLabel,
-                    address.trim()
+                    "",
+                    ""
                 )
             } else {
                 googleNotice = "No se pudo leer la cuenta de Google del dispositivo. Completá tus datos manualmente abajo."
@@ -224,86 +282,79 @@ fun RegisterAccountScreen(
             contentPadding = PaddingValues(top = 20.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // 1. Encabezado de Bienvenida
+            // 1. Encabezado según el rol seleccionado en la pantalla de Bienvenida (sin repetir selector de rol)
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        color = SurfaceContainer,
-                        shape = RoundedCornerShape(999.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.VerifiedUser,
-                                contentDescription = null,
-                                tint = PrimaryContainer,
-                                modifier = Modifier.size(16.dp)
+                        Surface(
+                            color = if (role == "professional") SecondaryFixed.copy(alpha = 0.45f) else Color(0xFFEFF6FF),
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (role == "professional") Secondary else PrimaryContainer
                             )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (role == "professional") Icons.Default.Handyman else Icons.Default.PersonSearch,
+                                    contentDescription = null,
+                                    tint = if (role == "professional") Secondary else PrimaryContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = if (role == "professional") "Registro de Profesional de Oficio" else "Registro de Vecino / Cliente",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (role == "professional") Secondary else PrimaryContainer
+                                )
+                            }
+                        }
+
+                        TextButton(
+                            onClick = onBack,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
                             Text(
-                                text = "Red Vecinal Segura",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "Cambiar rol",
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = PrimaryContainer
+                                color = PrimaryContainer,
+                                textDecoration = TextDecoration.Underline
                             )
                         }
                     }
 
                     Text(
-                        text = if (isLoginMode) "Ingresá a tu cuenta de Guía de Oficios" else "Creá tu cuenta en Guía de Oficios",
+                        text = when {
+                            isLoginMode -> "Ingresá a tu cuenta de Guía de Oficios"
+                            role == "professional" -> "Creá tu perfil de Profesional"
+                            else -> "Creá tu cuenta de Vecino"
+                        },
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.ExtraBold,
                         color = OnSurface
                     )
                     Text(
-                        text = if (isLoginMode)
-                            "Ingresá con tu cuenta de Google o con tu correo/teléfono y contraseña."
-                        else
-                            "Conectate con vecinos y profesionales de confianza de tu barrio en pocos minutos.",
+                        text = when {
+                            isLoginMode -> "Ingresá con tu cuenta de Google o con tu correo/teléfono y contraseña."
+                            role == "professional" -> "Registrá tu oficio, zona de cobertura y teléfono comercial para recibir solicitudes directas por WhatsApp."
+                            else -> "Conectate con profesionales verificados cerca de tu domicilio en pocos minutos."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = OnSurfaceVariant
                     )
                 }
             }
 
-            // 2. Selector de Rol con borde azul #1E40AF, fondo #EFF6FF y tilde verde #15803D (AND-2.3a)
-            if (!isLoginMode) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "Me registro como:",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = OnSurface
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            StitchRegisterRoleCard(
-                                title = "Soy Vecino / Cliente",
-                                subtitle = "Busco oficios",
-                                icon = Icons.Default.PersonSearch,
-                                selected = role == "client",
-                                onClick = { role = "client" },
-                                modifier = Modifier.weight(1f)
-                            )
-                            StitchRegisterRoleCard(
-                                title = "Soy Profesional",
-                                subtitle = "Plomero, Gasista, etc.",
-                                icon = Icons.Default.Handyman,
-                                selected = role == "professional",
-                                onClick = { role = "professional" },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 3. Botón rápido: Continuar con Google (sin popup falso)
+            // 2. Botón rápido: Continuar con Google (Obtiene Nombre, Apellido y Correo; el resto se completa luego en el perfil)
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
@@ -334,6 +385,11 @@ fun RegisterAccountScreen(
                             )
                         }
                     }
+                    Text(
+                        text = "Con Google tomamos tu nombre y correo rápido; luego podrás completar tu dirección y teléfono desde tu perfil.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = OnSurfaceVariant
+                    )
                     if (!googleNotice.isNullOrBlank()) {
                         Surface(
                             color = SurfaceContainerLow,
@@ -353,7 +409,7 @@ fun RegisterAccountScreen(
                 }
             }
 
-            // 4. Divisor
+            // 3. Divisor
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -361,7 +417,7 @@ fun RegisterAccountScreen(
                 ) {
                     HorizontalDivider(modifier = Modifier.weight(1f), color = OutlineVariant)
                     Text(
-                        text = if (isLoginMode) "O ingresá con tus datos" else "O completá tus datos a mano",
+                        text = if (isLoginMode) "O ingresá con tus datos" else "O completá el formulario manual",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = OnSurfaceVariant,
@@ -372,7 +428,7 @@ fun RegisterAccountScreen(
             }
 
             if (!isLoginMode) {
-                // 5. Nombre y Apellido Completo (>= 3 letras)
+                // 4. Nombre y Apellido Completo (>= 3 letras)
                 item {
                     StitchValidatedInputField(
                         icon = Icons.Default.Person,
@@ -394,21 +450,21 @@ fun RegisterAccountScreen(
                     )
                 }
 
-                // 6. Teléfono Celular Argentino con normalización +54 9 11
+                // 5. Teléfono Celular Argentino con normalización +54 9 ...
                 item {
                     val digitsCount = phone.count { it.isDigit() }
                     val normalizedPreview = if (digitsCount >= 8) normalizeArgentineMobilePhone(phone) else null
                     StitchValidatedInputField(
                         icon = Icons.Default.Call,
-                        label = "Teléfono celular con prefijo",
-                        badgeText = "Para coordinar por WhatsApp",
+                        label = if (role == "professional") "Teléfono celular comercial (WhatsApp)" else "Teléfono celular con prefijo",
+                        badgeText = if (role == "professional") "Recibirás pedidos aquí" else "Para coordinar por WhatsApp",
                         value = phone,
                         onValueChange = {
                             phone = it
                             phoneError = null
                             onClearAuthError()
                         },
-                        placeholder = "Ej. 11 5544-3322 o +54 9 11 5544-3322",
+                        placeholder = "Ej. 261 554-3322 o 11 5544-3322",
                         isError = phoneError != null,
                         supportingText = phoneError ?: normalizedPreview?.let { "Se guardará normalizado como: $it" },
                         keyboardOptions = KeyboardOptions(
@@ -418,19 +474,145 @@ fun RegisterAccountScreen(
                     )
                 }
 
-                // 7. Localidad, Ciudad o Barrio en cualquier punto del país (Gran Mendoza, Luján Bs.As., CABA/GBA o interior)
-                item {
-                    val filteredSuggestions = remember(localityText) {
-                        val q = localityText.trim().lowercase()
-                        if (q.isEmpty()) {
-                            ARGENTINA_SUGGESTED_LOCALITIES.take(12)
-                        } else {
-                            ARGENTINA_SUGGESTED_LOCALITIES.filter {
-                                it.label.lowercase().contains(q) || it.zone.lowercase().contains(q)
-                            }.take(10)
+                // 6. Campos Exclusivos para Profesionales (Rubro principal, Especialidad y Radio de cobertura)
+                if (role == "professional") {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Handyman,
+                                    contentDescription = null,
+                                    tint = Primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Tu rubro u oficio principal",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = OnSurface
+                                )
+                            }
+
+                            // Grilla de chips de los 8 rubros
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                PROFESSIONAL_TRADE_CATEGORIES.chunked(2).forEach { rowItems ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        rowItems.forEach { (catId, catLabel) ->
+                                            val isSelected = selectedCategoryId == catId
+                                            Surface(
+                                                onClick = {
+                                                    selectedCategoryId = catId
+                                                    if (tradeTitle.isBlank()) {
+                                                        tradeTitle = catLabel
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (isSelected) Color(0xFFEFF6FF) else SurfaceContainerLowest,
+                                                border = BorderStroke(
+                                                    width = if (isSelected) 2.dp else 1.dp,
+                                                    color = if (isSelected) PrimaryContainer else OutlineVariant
+                                                ),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(44.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .padding(horizontal = 10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text(
+                                                        text = catLabel,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                                        color = if (isSelected) PrimaryContainer else OnSurface,
+                                                        maxLines = 1
+                                                    )
+                                                    if (isSelected) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Check,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFF15803D),
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            StitchValidatedInputField(
+                                icon = Icons.Default.WorkOutline,
+                                label = "Título o especialidad de tu servicio",
+                                badgeText = "Visible en tu perfil",
+                                value = tradeTitle,
+                                onValueChange = {
+                                    tradeTitle = it
+                                    tradeTitleError = null
+                                },
+                                placeholder = "Ej. Gasista Matriculado y Plomería en General",
+                                isError = tradeTitleError != null,
+                                supportingText = tradeTitleError ?: "Describí brevemente tu especialidad principal.",
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.Sentences,
+                                    keyboardType = KeyboardType.Text,
+                                    imeAction = ImeAction.Next
+                                )
+                            )
+
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "Radio máximo de cobertura desde tu base:",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = OnSurface
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    listOf(5, 10, 15, 25).forEach { km ->
+                                        val selectedKm = coverageRadiusKm == km
+                                        Surface(
+                                            onClick = { coverageRadiusKm = km },
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = if (selectedKm) Color(0xFFEFF6FF) else SurfaceContainerLowest,
+                                            border = BorderStroke(
+                                                if (selectedKm) 2.dp else 1.dp,
+                                                if (selectedKm) PrimaryContainer else OutlineVariant
+                                            ),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(42.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = "$km km",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (selectedKm) PrimaryContainer else OnSurface
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
+                }
 
+                // 7. Localidad, Ciudad o Barrio (Sin robo de foco al borrar + Sugerencias en vivo de toda Argentina)
+                item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -455,27 +637,29 @@ fun RegisterAccountScreen(
                                 )
                             }
                             Text(
-                                text = "Toda Argentina",
+                                text = "Autocompletado",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryContainer
                             )
                         }
 
-                        // Atajos rápidos para las zonas prioritarias de lanzamiento (Gran Mendoza, Luján Bs.As., AMBA)
+                        // Atajos rápidos para las zonas prioritarias de lanzamiento
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             listOf(
                                 "Gran Mendoza" to "Ciudad de Mendoza, Mendoza",
-                                "Godoy Cruz" to "Godoy Cruz, Mendoza",
+                                "Palmira (Mza)" to "Palmira, San Martín, Mendoza",
                                 "Luján (Bs. As.)" to "Luján, Buenos Aires"
                             ).forEach { (chipLabel, chipValue) ->
                                 val isSelected = localityText.equals(chipValue, ignoreCase = true)
                                 Surface(
                                     onClick = {
+                                        suppressLocalitySuggest = true
                                         localityText = chipValue
+                                        localitySuggestions = emptyList()
                                         neighborhoodError = null
                                         verifiedGeocode = null
                                     },
@@ -497,126 +681,315 @@ fun RegisterAccountScreen(
                             }
                         }
 
-                        ExposedDropdownMenuBox(
-                            expanded = neighborhoodExpanded && filteredSuggestions.isNotEmpty(),
-                            onExpandedChange = { neighborhoodExpanded = !neighborhoodExpanded }
-                        ) {
-                            OutlinedTextField(
-                                value = localityText,
-                                onValueChange = {
-                                    localityText = it
-                                    neighborhoodError = null
-                                    verifiedGeocode = null
-                                    neighborhoodExpanded = true
-                                    onClearAuthError()
-                                },
-                                singleLine = true,
-                                placeholder = { Text("Ej. Godoy Cruz, Mendoza o Luján, Buenos Aires") },
-                                trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = neighborhoodExpanded)
-                                },
-                                isError = neighborhoodError != null,
-                                supportingText = {
-                                    if (neighborhoodError != null) {
-                                        Text(
-                                            text = neighborhoodError!!,
-                                            color = ErrorColor,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "Podés escribir cualquier ciudad o localidad del país o elegir una sugerencia.",
-                                            color = OnSurfaceVariant
+                        OutlinedTextField(
+                            value = localityText,
+                            onValueChange = { newValue ->
+                                localityText = newValue
+                                neighborhoodError = null
+                                verifiedGeocode = null
+                                onClearAuthError()
+                            },
+                            singleLine = true,
+                            placeholder = { Text("Escribí tu ciudad (ej. Palmira, Godoy Cruz, Luján...)") },
+                            trailingIcon = {
+                                if (localityText.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            localityText = ""
+                                            localitySuggestions = emptyList()
+                                            verifiedGeocode = null
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Borrar localidad",
+                                            tint = OnSurfaceVariant
                                         )
                                     }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = SurfaceContainerLowest,
-                                    unfocusedContainerColor = SurfaceContainerLowest,
-                                    focusedBorderColor = PrimaryContainer,
-                                    unfocusedBorderColor = OutlineVariant,
-                                    errorBorderColor = ErrorColor
-                                ),
-                                modifier = Modifier
-                                    .menuAnchor()
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                            )
-
-                            ExposedDropdownMenu(
-                                expanded = neighborhoodExpanded && filteredSuggestions.isNotEmpty(),
-                                onDismissRequest = { neighborhoodExpanded = false },
-                                modifier = Modifier.background(SurfaceContainerLowest)
-                            ) {
-                                filteredSuggestions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Column {
-                                                Text(
-                                                    text = option.label,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = OnSurface
-                                                )
-                                                Text(
-                                                    text = option.zone,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = OnSurfaceVariant
-                                                )
-                                            }
-                                        },
-                                        onClick = {
-                                            localityText = option.label
-                                            neighborhoodError = null
-                                            verifiedGeocode = null
-                                            neighborhoodExpanded = false
-                                        }
+                                }
+                            },
+                            isError = neighborhoodError != null,
+                            supportingText = {
+                                if (neighborhoodError != null) {
+                                    Text(
+                                        text = neighborhoodError!!,
+                                        color = ErrorColor,
+                                        fontWeight = FontWeight.SemiBold
                                     )
+                                } else {
+                                    Text(
+                                        text = "Escribí al menos 2 letras para ver sugerencias oficiales de localidades.",
+                                        color = OnSurfaceVariant
+                                    )
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Next
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = SurfaceContainerLowest,
+                                unfocusedContainerColor = SurfaceContainerLowest,
+                                focusedBorderColor = PrimaryContainer,
+                                unfocusedBorderColor = OutlineVariant,
+                                errorBorderColor = ErrorColor
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                        )
+
+                        // Lista inline de sugerencias de Localidades (NO roba foco del teclado)
+                        if (localitySuggestions.isNotEmpty()) {
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                                border = BorderStroke(1.5.dp, PrimaryContainer.copy(alpha = 0.4f)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    localitySuggestions.forEachIndexed { index, suggestion ->
+                                        Surface(
+                                            onClick = {
+                                                suppressLocalitySuggest = true
+                                                localityText = suggestion.label
+                                                localitySuggestions = emptyList()
+                                                neighborhoodError = null
+                                                verifiedGeocode = null
+                                            },
+                                            color = Color.Transparent,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.LocationCity,
+                                                    contentDescription = null,
+                                                    tint = PrimaryContainer,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = suggestion.label,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = OnSurface
+                                                    )
+                                                    if (suggestion.subtitle.isNotBlank()) {
+                                                        Text(
+                                                            text = suggestion.subtitle,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = OnSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (index < localitySuggestions.lastIndex) {
+                                            HorizontalDivider(color = SurfaceContainer)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // 8. Dirección (Calle y altura) + Botón de Validación Geográfica en vivo
+                // 8. Dirección (Calle y altura) con Sugerencias Normalizadas en Vivo + Validación en el Mapa
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        StitchValidatedInputField(
-                            icon = Icons.Default.Home,
-                            label = "Calle y altura aproximada",
-                            badgeText = "Validación por mapa",
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Home,
+                                    contentDescription = null,
+                                    tint = Primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Calle y altura aproximada",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = OnSurface
+                                )
+                            }
+                            Text(
+                                text = "Sugerencias normalizadas",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryContainer
+                            )
+                        }
+
+                        OutlinedTextField(
                             value = address,
-                            onValueChange = {
-                                address = it
+                            onValueChange = { newAddr ->
+                                address = newAddr
                                 addressError = null
                                 verifiedGeocode = null
                                 onClearAuthError()
                             },
-                            placeholder = "Ej. San Martín 1250 o Av. Las Heras 450",
+                            singleLine = true,
+                            placeholder = { Text("Ej. Rivadavia 221 o San Martín 1250") },
+                            trailingIcon = {
+                                if (address.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            address = ""
+                                            addressSuggestions = emptyList()
+                                            verifiedGeocode = null
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Borrar dirección",
+                                            tint = OnSurfaceVariant
+                                        )
+                                    }
+                                }
+                            },
                             isError = addressError != null,
-                            supportingText = addressError,
+                            supportingText = {
+                                if (addressError != null) {
+                                    Text(
+                                        text = addressError!!,
+                                        color = ErrorColor,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                } else {
+                                    Text(
+                                        text = "A medida que escribís tu calle y número te sugerimos la dirección normalizada.",
+                                        color = OnSurfaceVariant
+                                    )
+                                }
+                            },
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Words,
                                 keyboardType = KeyboardType.Text,
                                 imeAction = ImeAction.Next
-                            )
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = SurfaceContainerLowest,
+                                unfocusedContainerColor = SurfaceContainerLowest,
+                                focusedBorderColor = PrimaryContainer,
+                                unfocusedBorderColor = OutlineVariant,
+                                errorBorderColor = ErrorColor
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
                         )
+
+                        // Lista inline de sugerencias de Direcciones Normalizadas (Georef AR + Nominatim OSM)
+                        if (addressSuggestions.isNotEmpty()) {
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                                border = BorderStroke(1.5.dp, PrimaryContainer.copy(alpha = 0.4f)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    addressSuggestions.forEachIndexed { index, suggestion ->
+                                        Surface(
+                                            onClick = {
+                                                suppressAddressSuggest = true
+                                                address = suggestion.street_address.ifBlank {
+                                                    suggestion.label.substringBefore(",").trim()
+                                                }
+                                                if (suggestion.locality.isNotBlank()) {
+                                                    suppressLocalitySuggest = true
+                                                    localityText = suggestion.locality
+                                                    localitySuggestions = emptyList()
+                                                }
+                                                addressSuggestions = emptyList()
+                                                addressError = null
+                                                neighborhoodError = null
+                                                verifiedGeocode = GeocodeResultDto(
+                                                    formatted_address = suggestion.label,
+                                                    neighborhood = suggestion.locality.ifBlank { localityText },
+                                                    locality = suggestion.locality,
+                                                    province = suggestion.province,
+                                                    lat = suggestion.lat,
+                                                    lng = suggestion.lng,
+                                                    source = suggestion.source,
+                                                    verified = true
+                                                )
+                                            },
+                                            color = Color.Transparent,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.LocationOn,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF15803D),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = suggestion.label,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = OnSurface
+                                                    )
+                                                    if (suggestion.subtitle.isNotBlank()) {
+                                                        Text(
+                                                            text = "Dirección normalizada · ${suggestion.subtitle}",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = OnSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (index < addressSuggestions.lastIndex) {
+                                            HorizontalDivider(color = SurfaceContainer)
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         OutlinedButton(
                             onClick = {
                                 val cleanLoc = localityText.trim()
                                 val cleanAddr = address.trim()
                                 if (cleanLoc.length < 3) {
-                                    neighborhoodError = "Ingresá tu localidad y provincia (ej. Luján, Buenos Aires o Godoy Cruz, Mendoza)."
+                                    neighborhoodError = "Ingresá tu localidad y provincia (ej. Palmira, Mendoza o Luján, Buenos Aires)."
                                 } else if (cleanAddr.length < 3) {
                                     addressError = "Ingresá tu calle y altura para validar en el mapa."
                                 } else {
                                     isGeocoding = true
+                                    addressSuggestions = emptyList()
+                                    localitySuggestions = emptyList()
                                     onValidateAddressGeocode(cleanLoc, cleanAddr) { result ->
                                         isGeocoding = false
                                         verifiedGeocode = result
                                         if (result.neighborhood.isNotBlank()) {
+                                            suppressLocalitySuggest = true
                                             localityText = result.neighborhood
                                         }
                                     }
@@ -999,6 +1372,11 @@ fun RegisterAccountScreen(
                                 hasError = true
                             }
 
+                            if (role == "professional" && tradeTitle.trim().length < 3) {
+                                tradeTitleError = "Ingresá el título o especialidad de tu oficio (ej. Gasista Matriculado)."
+                                hasError = true
+                            }
+
                             if (password.trim().length < 6) {
                                 passwordError = "La contraseña debe tener al menos 6 números o letras."
                                 hasError = true
@@ -1032,7 +1410,10 @@ fun RegisterAccountScreen(
                                         address = cleanAddress,
                                         saved_address = combinedAddress,
                                         saved_lat = geo?.lat ?: 0.0,
-                                        saved_lng = geo?.lng ?: 0.0
+                                        saved_lng = geo?.lng ?: 0.0,
+                                        primary_category_id = selectedCategoryId,
+                                        trade_title = tradeTitle.trim(),
+                                        coverage_radius_km = coverageRadiusKm
                                     )
                                 )
                             }

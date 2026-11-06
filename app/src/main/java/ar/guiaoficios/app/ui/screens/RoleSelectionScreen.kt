@@ -41,11 +41,12 @@ import ar.guiaoficios.app.ui.theme.*
  */
 @Composable
 fun RoleSelectionScreen(
-    initialRole: String = "client",
+    initialRole: String = "",
     onStartWithRole: (selectedRole: String) -> Unit,
     onGoToLogin: () -> Unit
 ) {
     var selectedRole by remember { mutableStateOf(initialRole) }
+    var roleError by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -142,7 +143,10 @@ fun RoleSelectionScreen(
                         subtitle = "Busco plomeros, electricistas, gasistas y más en mi barrio.",
                         icon = Icons.Default.Home,
                         selected = selectedRole == "client",
-                        onClick = { selectedRole = "client" }
+                        onClick = {
+                            selectedRole = "client"
+                            roleError = null
+                        }
                     )
 
                     LargeRoleRadioCard(
@@ -150,8 +154,22 @@ fun RoleSelectionScreen(
                         subtitle = "Quiero recibir solicitudes de vecinos de mi zona.",
                         icon = Icons.Default.Handyman,
                         selected = selectedRole == "professional",
-                        onClick = { selectedRole = "professional" }
+                        onClick = {
+                            selectedRole = "professional"
+                            roleError = null
+                        }
                     )
+
+                    if (roleError != null) {
+                        Text(
+                            text = roleError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = ErrorColor,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
@@ -165,7 +183,13 @@ fun RoleSelectionScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Button(
-                onClick = { onStartWithRole(selectedRole) },
+                onClick = {
+                    if (selectedRole.isBlank()) {
+                        roleError = "Seleccioná una opción arriba (Vecino o Profesional) para comenzar."
+                    } else {
+                        onStartWithRole(selectedRole)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),

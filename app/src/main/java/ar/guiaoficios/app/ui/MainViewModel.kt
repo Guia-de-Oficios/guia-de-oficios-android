@@ -405,6 +405,95 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun fetchGeocodeSuggestions(
+        type: String,
+        locality: String = "",
+        query: String,
+        onResult: (List<GeocodeSuggestionDto>) -> Unit
+    ) {
+        val cleanQuery = query.trim()
+        if (cleanQuery.length < 2) {
+            onResult(emptyList())
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val remote = api.suggestGeocode(type = type, locality = locality.trim(), query = cleanQuery)
+                if (remote.isNotEmpty()) {
+                    onResult(remote)
+                    return@launch
+                }
+            } catch (_: Exception) {
+                // Fallback a catálogo local sugerido si no hay red
+            }
+
+            if (type == "locality") {
+                val qLower = cleanQuery.lowercase()
+                val localMatches = ARGENTINA_SUGGESTED_LOCALITIES.filter {
+                    it.label.lowercase().contains(qLower) || it.zone.lowercase().contains(qLower)
+                }.take(6).map {
+                    GeocodeSuggestionDto(
+                        label = it.label,
+                        subtitle = it.zone,
+                        locality = it.label,
+                        lat = it.lat,
+                        lng = it.lng,
+                        source = "local_catalog"
+                    )
+                }
+                onResult(localMatches)
+            } else {
+                onResult(emptyList())
+            }
+        }
+    }
+
+    fun updateUserProfile(
+        input: UpdateUserProfileInputDto,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, authError = null, statusMessage = null) }
+            try {
+                val geo = if (input.saved_lat == 0.0 || input.saved_lng == 0.0) {
+                    resolveGeocodeInternal(locality = input.neighborhood, address = input.address.ifBlank { input.saved_address })
+                } else {
+                    GeocodeResultDto(
+                        formatted_address = input.saved_address,
+                        neighborhood = input.neighborhood,
+                        lat = input.saved_lat,
+                        lng = input.saved_lng,
+                        verified = true
+                    )
+                }
+                val enriched = input.copy(
+                    neighborhood = geo.neighborhood.ifBlank { input.neighborhood },
+                    saved_address = geo.formatted_address,
+                    saved_lat = geo.lat,
+                    saved_lng = geo.lng
+                )
+                val updatedUser = api.updateUserProfile(enriched)
+                sessionManager.updateSavedUser(updatedUser)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        currentUser = updatedUser,
+                        statusMessage = "¡Perfil actualizado correctamente en PostgreSQL!"
+                    )
+                }
+                onSuccess()
+            } catch (e: Exception) {
+                val errMsg = extractApiErrorMessage(e, "No se pudo guardar el perfil")
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        statusMessage = errMsg
+                    )
+                }
+            }
+        }
+    }
+
     fun updateAddress(newAddress: String, locality: String = "") {
         viewModelScope.launch {
             try {
