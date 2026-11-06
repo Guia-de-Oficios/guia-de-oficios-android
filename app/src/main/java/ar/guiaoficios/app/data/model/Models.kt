@@ -19,13 +19,17 @@ data class NeighborhoodOption(
 )
 
 val ARGENTINA_SUGGESTED_LOCALITIES: List<NeighborhoodOption> = listOf(
-    // Gran Mendoza (Zonas de lanzamiento prioritario)
+    // Gran Mendoza y Zona Este (Zonas de lanzamiento prioritario)
     NeighborhoodOption("Ciudad de Mendoza, Mendoza", "Gran Mendoza", -32.8895, -68.8458),
     NeighborhoodOption("Godoy Cruz, Mendoza", "Gran Mendoza", -32.9253, -68.8444),
     NeighborhoodOption("Guaymallén, Mendoza", "Gran Mendoza", -32.8997, -68.7975),
     NeighborhoodOption("Las Heras, Mendoza", "Gran Mendoza", -32.8527, -68.8284),
     NeighborhoodOption("Luján de Cuyo, Mendoza", "Gran Mendoza", -33.0381, -68.8794),
     NeighborhoodOption("Maipú, Mendoza", "Gran Mendoza", -32.9774, -68.7867),
+    NeighborhoodOption("Palmira, San Martín, Mendoza", "Mendoza Este", -33.0546, -68.5613),
+    NeighborhoodOption("San Martín, Mendoza", "Mendoza Este", -33.0810, -68.4681),
+    NeighborhoodOption("Rivadavia, Mendoza", "Mendoza Este", -33.1905, -68.4608),
+    NeighborhoodOption("San Rafael, Mendoza", "Mendoza Sur", -34.6177, -68.3301),
     // Luján y Zona Oeste PBA (Zonas de lanzamiento prioritario)
     NeighborhoodOption("Luján, Buenos Aires", "PBA Oeste", -34.5703, -59.1050),
     NeighborhoodOption("Open Door, Luján, Buenos Aires", "PBA Oeste", -34.4961, -59.0692),
@@ -117,9 +121,12 @@ data class RegisterUserInputDto(
     val auth_provider: String = "manual",
     val neighborhood: String = "",
     val address: String = "",
-    val saved_address: String? = "Av. Rivadavia 5420, Caballito",
-    val saved_lat: Double? = -34.6186,
-    val saved_lng: Double? = -58.4368
+    val saved_address: String? = "",
+    val saved_lat: Double? = 0.0,
+    val saved_lng: Double? = 0.0,
+    val primary_category_id: Int = 1,
+    val trade_title: String = "",
+    val coverage_radius_km: Int = 10
 )
 
 data class LoginInputDto(
@@ -144,6 +151,19 @@ data class UpdateAddressInputDto(
     val saved_lng: Double = 0.0
 )
 
+data class UpdateUserProfileInputDto(
+    val full_name: String,
+    val phone: String,
+    val neighborhood: String = "",
+    val address: String = "",
+    val saved_address: String = "",
+    val saved_lat: Double = 0.0,
+    val saved_lng: Double = 0.0,
+    val primary_category_id: Int = 0,
+    val trade_title: String = "",
+    val coverage_radius_km: Int = 0
+)
+
 data class GeocodeResultDto(
     val formatted_address: String = "",
     val neighborhood: String = "",
@@ -155,6 +175,17 @@ data class GeocodeResultDto(
     val verified: Boolean = false
 )
 
+data class GeocodeSuggestionDto(
+    val label: String = "",
+    val subtitle: String = "",
+    val locality: String = "",
+    val province: String = "",
+    val street_address: String = "",
+    val lat: Double = 0.0,
+    val lng: Double = 0.0,
+    val source: String = ""
+)
+
 data class UserDto(
     val id: String,
     val full_name: String,
@@ -162,11 +193,16 @@ data class UserDto(
     val phone: String = "",
     val role: String = "client",
     val auth_provider: String = "manual",
-    val saved_address: String = "Av. Rivadavia 5420, Caballito",
-    val saved_lat: Double = -34.6186,
-    val saved_lng: Double = -58.4368,
+    val saved_address: String = "",
+    val saved_lat: Double = -32.8895,
+    val saved_lng: Double = -68.8458,
     val professional_id: String? = null
-)
+) {
+    val isProfileIncomplete: Boolean
+        get() = phone.isBlank() ||
+            saved_address.isBlank() ||
+            saved_address.equals("Sin especificar", ignoreCase = true)
+}
 
 data class AuthResponseDto(
     val token: String,

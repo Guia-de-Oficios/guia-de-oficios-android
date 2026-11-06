@@ -48,13 +48,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ar.guiaoficios.app.data.model.CategoryDto
 import ar.guiaoficios.app.data.model.DiagnosticSuggestionResponseDto
+import ar.guiaoficios.app.data.model.GeocodeSuggestionDto
 import ar.guiaoficios.app.data.model.UserDto
 import ar.guiaoficios.app.ui.theme.*
+import kotlinx.coroutines.delay
 
 /**
  * Pantalla 3 de Stitch: `cliente_inicio_y_categor_as`
  * Respeta 1:1 `cliente_inicio_y_categor_as/code.html` y `screen.png`:
  * - Saludo "¡Hola, [Nombre]!" + Pill "Vecino activo" + Ubicación con ícono LocationOn + botón "Cambiar dirección" (56dp)
+ * - Alerta de completar perfil si el usuario ingresó con Google y le falta teléfono o dirección
  * - Buscador "¿Qué necesitás solucionar hoy?" con ícono Search y botón limpiar
  * - Tarjeta de asistencia "¿No sabés qué profesional necesitás?" con ícono ContactSupport y botón "¿Qué está pasando?"
  * - Grilla de 2 columnas con los 8 rubros de PostgreSQL, íconos circulares #EAEDFF y badges ("Matriculados" / "Urgencias")
@@ -65,22 +68,44 @@ import ar.guiaoficios.app.ui.theme.*
 fun HomeScreen(
     userName: String,
     savedAddress: String,
+    isProfileIncomplete: Boolean = false,
     categories: List<CategoryDto>,
     diagnosticResult: DiagnosticSuggestionResponseDto? = null,
     onSelectCategory: (CategoryDto) -> Unit,
     onSearchByQuery: (String) -> Unit = {},
     onRequestDiagnostic: (String) -> Unit = {},
     onUpdateAddress: (String) -> Unit = {},
+    onSuggestGeocode: (type: String, locality: String, query: String, onResult: (List<GeocodeSuggestionDto>) -> Unit) -> Unit = { _, _, _, _ -> },
+    onGoToCompleteProfile: () -> Unit = {},
     onOpenTopMonth: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showAddressDialog by remember { mutableStateOf(false) }
     var showDiagnosticDialog by remember { mutableStateOf(false) }
     var addressDraft by remember(savedAddress) { mutableStateOf(savedAddress) }
+    var addressSuggestions by remember { mutableStateOf<List<GeocodeSuggestionDto>>(emptyList()) }
+    var suppressDialogSuggest by remember { mutableStateOf(false) }
     var problemDraft by remember { mutableStateOf("No enciende el calefón de la cocina") }
 
     val firstName = remember(userName) {
         userName.trim().substringBefore(" ").ifBlank { "Vecino" }
+    }
+
+    LaunchedEffect(addressDraft, showAddressDialog) {
+        if (!showAddressDialog) return@LaunchedEffect
+        if (suppressDialogSuggest) {
+            suppressDialogSuggest = false
+            return@LaunchedEffect
+        }
+        val q = addressDraft.trim()
+        if (q.length < 3) {
+            addressSuggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(320)
+        onSuggestGeocode("address", "", q) { results ->
+            addressSuggestions = results
+        }
     }
 
     if (showAddressDialog) {
@@ -89,7 +114,7 @@ fun HomeScreen(
             containerColor = SurfaceContainerLowest,
             title = {
                 Text(
-                    "Cambiar tu dirección en el barrio",
+                    "Cambiar tu dirección",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -97,19 +122,71 @@ fun HomeScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "Ingresá tu calle, altura y barrio para ordenar los profesionales más cercanos con PostGIS:",
+                        "Ingresá tu calle, altura y localidad para ordenar los profesionales más cercanos con PostGIS:",
                         style = MaterialTheme.typography.bodyMedium,
                         color = OnSurfaceVariant
                     )
                     OutlinedTextField(
                         value = addressDraft,
                         onValueChange = { addressDraft = it },
-                        label = { Text("Dirección y barrio") },
-                        placeholder = { Text("Ej. Av. Rivadavia 5420, Caballito") },
+                        label = { Text("Dirección y localidad") },
+                        placeholder = { Text("Ej. Rivadavia 221, Palmira, Mendoza") },
+                        trailingIcon = {
+                            if (addressDraft.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    addressDraft = ""
+                                    addressSuggestions = emptyList()
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Limpiar")
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
+
+                    if (addressSuggestions.isNotEmpty()) {
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow),
+                            border = BorderStroke(1.dp, PrimaryContainer.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column {
+                                addressSuggestions.take(4).forEachIndexed { idx, sug ->
+                                    Surface(
+                                        onClick = {
+                                            suppressDialogSuggest = true
+                                            addressDraft = sug.label
+                                            addressSuggestions = emptyList()
+                                        },
+                                        color = Color.Transparent,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                            Text(
+                                                text = sug.label,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = OnSurface
+                                            )
+                                            if (sug.subtitle.isNotBlank()) {
+                                                Text(
+                                                    text = sug.subtitle,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = OnSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (idx < addressSuggestions.take(4).lastIndex) {
+                                        HorizontalDivider(color = SurfaceContainer)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -225,6 +302,60 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(22.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 28.dp)
     ) {
+        // 0. Alerta para completar perfil (cuando el usuario ingresó con Google y le falta teléfono o dirección)
+        if (isProfileIncomplete) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
+                    border = BorderStroke(1.5.dp, Color(0xFFD97706)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.WarningAmber,
+                                contentDescription = null,
+                                tint = Color(0xFFB45309),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "Completá la información de tu perfil",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF92400E)
+                            )
+                        }
+                        Text(
+                            text = "Ingresaste con Google. Agregá tu teléfono celular y tu dirección para ver y contactar a los profesionales más cercanos a tu casa.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF78350F)
+                        )
+                        Button(
+                            onClick = onGoToCompleteProfile,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            Text(
+                                text = "Completar mi perfil ahora →",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // 1. Greeting & Neighborhood Context Anchor (`cliente_inicio_y_categor_as/code.html`)
         item {
             Card(
