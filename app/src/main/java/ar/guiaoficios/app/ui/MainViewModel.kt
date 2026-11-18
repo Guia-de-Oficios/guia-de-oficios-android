@@ -542,10 +542,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
                 sessionManager.updateSavedUser(updatedUser)
+                val refreshedPros = runCatching {
+                    api.getProfessionals(
+                        lat = updatedUser.saved_lat,
+                        lng = updatedUser.saved_lng
+                    )
+                }.getOrDefault(_uiState.value.professionals)
                 _uiState.update {
                     it.copy(
                         currentUser = updatedUser,
-                        statusMessage = "Dirección actualizada correctamente"
+                        professionals = refreshedPros,
+                        statusMessage = "Dirección actualizada: ${updatedUser.saved_address}"
                     )
                 }
             } catch (e: Exception) {

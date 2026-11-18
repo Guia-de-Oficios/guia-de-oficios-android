@@ -25,8 +25,8 @@ Repositorio oficial de la aplicación móvil Android para **Guía de Oficios**, 
 | **Paso 2** | • `RegisterScreen.kt`: selector visual de rol, normalización telefónica (`+54 9 11`), autocompletado en vivo de localidades y calles normalizadas, validación en mapa y términos de convivencia legal | ✅ **Completado** |
 | **Paso 3** | • Redirección inteligente post-login y post-registro (`navigateAfterAuth` en `MainActivity.kt`) según rol (`client` vs `professional` sin DNI verificado -> Vista #13 vs `professional` verificado -> Panel Vista #14) | ✅ **Completado** |
 | **Paso 4** | • Separación de botones en `StitchTopAppBar` (Inicio del rol vs Mi Cuenta)<br>• Pestaña `Mis contactos` conectada a `MyRequestsHistoryScreen.kt` (`GET /api/v1/requests/my`) y pestaña `Ayuda` con línea gratuita `0800-444-OFICIO`<br>• `UserAccountScreen.kt` diferenciada por rol (historial de pedidos para vecinos; estado de DNI/Matrícula y acceso al Panel para profesionales) | ✅ **Completado** |
-| **Paso 5** | • Home del vecino (Vista #4): chips de diagnóstico sin textos pre-escritos y navegación directa a resultados | 🔜 **Próximo paso** |
-| **Paso 6** | • `SearchResultsScreen` (Vista #5): fotos de perfil `64.dp`, badges combinados (urgencia + matrícula) y tira para mayores | ⏳ Pendiente |
+| **Paso 5** | • Home del vecino (Vista #4): diálogo de diagnóstico limpio sin texto pre-escrito, chips de ejemplos rápidos tocables, botón directo `"Ver [Rubro]s cerca de mi casa →"` y recálculo PostGIS al cambiar dirección | ✅ **Completado** |
+| **Paso 6** | • `SearchResultsScreen` (Vista #5): fotos de perfil `64.dp`, badges combinados (urgencia + matrícula) y tira para mayores | 🔜 **Próximo paso** |
 | **Paso 7** | • `ProfessionalProfileScreen` (Vista #6): sin fallbacks falsos, 3 tarjetas de garantía, portfolio Coil y opiniones | ⏳ Pendiente |
 | **Paso 8** | • `TopProfessionalsMonthScreen` (Vista #7): podio barrial (#1 Oro, #2 Plata, #3 Bronce) y filtros | ⏳ Pendiente |
 | **Paso 9** | • `GuidedRequestScreen` (Vista #9): tarjetas de urgencia `72.dp`, preview y borrado de foto | ⏳ Pendiente |

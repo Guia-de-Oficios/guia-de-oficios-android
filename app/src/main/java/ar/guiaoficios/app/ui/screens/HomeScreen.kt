@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -85,10 +87,32 @@ fun HomeScreen(
     var addressDraft by remember(savedAddress) { mutableStateOf(savedAddress) }
     var addressSuggestions by remember { mutableStateOf<List<GeocodeSuggestionDto>>(emptyList()) }
     var suppressDialogSuggest by remember { mutableStateOf(false) }
-    var problemDraft by remember { mutableStateOf("No enciende el calefón de la cocina") }
+    var problemDraft by remember { mutableStateOf("") }
+    var diagnosticInputError by remember { mutableStateOf<String?>(null) }
+
+    val diagnosticQuickExamples = remember {
+        listOf(
+            "Pierde agua el flexible",
+            "Saltó la térmica",
+            "Olor a gas / Calefón",
+            "Se trabó la cerradura",
+            "No enfría el aire",
+            "Humedad y pintura",
+            "Cerámicos o revoque",
+            "Corte de pasto y poda"
+        )
+    }
 
     val firstName = remember(userName) {
         userName.trim().substringBefore(" ").ifBlank { "Vecino" }
+    }
+
+    val neighborhoodLabel = remember(savedAddress) {
+        if (savedAddress.contains(",")) {
+            savedAddress.substringAfter(",").trim().substringBefore(",").trim().ifBlank { "tu barrio" }
+        } else {
+            savedAddress.trim().ifBlank { "tu barrio" }
+        }
     }
 
     LaunchedEffect(addressDraft, showAddressDialog) {
@@ -225,20 +249,75 @@ fun HomeScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "Describí con tus palabras el inconveniente y te sugerimos qué oficio corresponde:",
+                        "Tocá un ejemplo rápido o describí con tus palabras el inconveniente para que te indiquemos qué oficio necesitás:",
                         style = MaterialTheme.typography.bodyMedium,
                         color = OnSurfaceVariant
                     )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(diagnosticQuickExamples) { example ->
+                            SuggestionChip(
+                                onClick = {
+                                    problemDraft = example
+                                    diagnosticInputError = null
+                                    onRequestDiagnostic(example)
+                                },
+                                label = {
+                                    Text(
+                                        text = example,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = if (problemDraft == example) PrimaryContainer.copy(alpha = 0.14f) else SurfaceContainerLow,
+                                    labelColor = Primary
+                                ),
+                                border = SuggestionChipDefaults.suggestionChipBorder(
+                                    enabled = true,
+                                    borderColor = if (problemDraft == example) PrimaryContainer else OutlineVariant
+                                )
+                            )
+                        }
+                    }
+
                     OutlinedTextField(
                         value = problemDraft,
-                        onValueChange = { problemDraft = it },
-                        label = { Text("Tu problema") },
+                        onValueChange = {
+                            problemDraft = it
+                            if (diagnosticInputError != null) diagnosticInputError = null
+                        },
+                        label = { Text("Describí tu problema") },
+                        placeholder = { Text("Ej. Pierde agua debajo de la pileta de la cocina") },
+                        trailingIcon = {
+                            if (problemDraft.isNotEmpty()) {
+                                IconButton(onClick = { problemDraft = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Limpiar texto")
+                                }
+                            }
+                        },
+                        isError = diagnosticInputError != null,
+                        supportingText = diagnosticInputError?.let { err ->
+                            { Text(err, color = ErrorColor, fontWeight = FontWeight.SemiBold) }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         minLines = 2
                     )
                     Button(
-                        onClick = { onRequestDiagnostic(problemDraft) },
+                        onClick = {
+                            val cleanProblem = problemDraft.trim()
+                            if (cleanProblem.length < 3) {
+                                diagnosticInputError = "Escribí al menos 3 letras o elegí una sugerencia de arriba."
+                            } else {
+                                diagnosticInputError = null
+                                onRequestDiagnostic(cleanProblem)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
@@ -275,11 +354,16 @@ fun HomeScreen(
                                         showDiagnosticDialog = false
                                         onSelectCategory(diagnosticResult.suggested_category)
                                     },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(52.dp),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Secondary)
                                 ) {
-                                    Text("Ver ${diagnosticResult.suggested_category.name}s cerca →", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "Ver ${diagnosticResult.suggested_category.name}s cerca de mi casa →",
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
@@ -676,7 +760,7 @@ fun HomeScreen(
                     }
 
                     Text(
-                        text = "🏆 Top Profesionales del Mes de Caballito",
+                        text = "🏆 Top Profesionales del Mes en $neighborhoodLabel",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.ExtraBold,
                         color = OnSurface
