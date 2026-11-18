@@ -196,7 +196,8 @@ data class UserDto(
     val saved_address: String = "",
     val saved_lat: Double = -32.8895,
     val saved_lng: Double = -68.8458,
-    val professional_id: String? = null
+    val professional_id: String? = null,
+    val is_dni_verified: Boolean = false
 ) {
     val isProfileIncomplete: Boolean
         get() = phone.isBlank() ||
