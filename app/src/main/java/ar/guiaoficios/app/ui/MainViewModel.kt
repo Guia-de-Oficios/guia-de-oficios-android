@@ -48,6 +48,7 @@ data class GuiaUiState(
     val professionals: List<ProfessionalSummaryDto> = emptyList(),
     val selectedProfessional: ProfessionalDetailDto? = null,
     val activeRequest: ServiceRequestDto? = null,
+    val myClientRequests: List<ServiceRequestDto> = emptyList(),
     val uploadedProblemPhotoUrl: String? = null,
     val uploadedDniFrontUrl: String? = null,
     val uploadedDniBackUrl: String? = null,
@@ -137,11 +138,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lat = _uiState.value.currentUser.saved_lat,
                     lng = _uiState.value.currentUser.saved_lng
                 )
+                val myReqs = if (_uiState.value.isAuthenticated) {
+                    runCatching { api.getMyClientRequests() }.getOrDefault(emptyList())
+                } else {
+                    emptyList()
+                }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         categories = cats,
-                        professionals = pros
+                        professionals = pros,
+                        myClientRequests = myReqs
                     )
                 }
             } catch (e: Exception) {
@@ -149,6 +156,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         isLoading = false,
                         statusMessage = "No pudimos conectar con el servidor. Verificá tu conexión a internet."
+                    )
+                }
+            }
+        }
+    }
+
+    fun loadMyClientRequests() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                val reqs = api.getMyClientRequests()
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        myClientRequests = reqs
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        statusMessage = "No se pudieron cargar tus solicitudes: ${e.localizedMessage}"
                     )
                 }
             }
@@ -668,6 +697,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         isLoading = false,
                         activeRequest = created,
+                        myClientRequests = listOf(created) + it.myClientRequests,
                         uploadedProblemPhotoUrl = null
                     )
                 }
@@ -718,9 +748,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isLoading = true) }
             try {
                 val updatedPro = api.submitProfessionalVerification(professionalId, input)
+                val updatedUser = _uiState.value.currentUser.copy(is_dni_verified = updatedPro.is_dni_verified)
+                sessionManager.updateSavedUser(updatedUser)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        currentUser = updatedUser,
                         selectedProfessional = updatedPro,
                         statusMessage = "Documentación guardada correctamente"
                     )

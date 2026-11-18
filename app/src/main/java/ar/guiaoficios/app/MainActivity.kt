@@ -6,12 +6,18 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -24,6 +30,7 @@ import androidx.navigation.navArgument
 import ar.guiaoficios.app.data.model.ProfessionalDashboardDto
 import ar.guiaoficios.app.data.model.ProfessionalDetailDto
 import ar.guiaoficios.app.data.model.ServiceRequestDto
+import ar.guiaoficios.app.data.model.UserDto
 import ar.guiaoficios.app.ui.MainViewModel
 import ar.guiaoficios.app.ui.components.StitchBottomNavBar
 import ar.guiaoficios.app.ui.components.StitchTopAppBar
@@ -53,24 +60,36 @@ fun GuiaDeOficiosApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: StitchScreen.RoleSelection.route
+    var showHelpDialog by remember { mutableStateOf(false) }
 
-    // Si existe una sesión JWT válida guardada en el dispositivo, ingresa directo al Home / Panel correspondiente
-    LaunchedEffect(uiState.isSessionChecked, uiState.isAuthenticated) {
-        if (uiState.isSessionChecked && uiState.isAuthenticated &&
-            (currentRoute.startsWith("role_selection") || currentRoute.startsWith("welcome"))
-        ) {
-            mainViewModel.refreshInitialData()
-            if (uiState.currentUser.role == "professional") {
-                val proId = uiState.currentUser.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+    fun navigateAfterAuth(user: UserDto, isNewRegistration: Boolean = false) {
+        mainViewModel.refreshInitialData()
+        if (user.role == "professional") {
+            val proId = user.professional_id?.takeIf { it.isNotBlank() } ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+            if (isNewRegistration || !user.is_dni_verified) {
+                navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId)) {
+                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+                }
+            } else {
                 mainViewModel.loadProfessionalDashboard(proId)
                 navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
                     popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
                 }
-            } else {
-                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                    popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                }
             }
+        } else {
+            mainViewModel.loadMyClientRequests()
+            navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
+            }
+        }
+    }
+
+    // Si existe una sesión JWT válida guardada en el dispositivo, ingresa directo al Home / Panel / Onboarding correspondiente
+    LaunchedEffect(uiState.isSessionChecked, uiState.isAuthenticated) {
+        if (uiState.isSessionChecked && uiState.isAuthenticated &&
+            (currentRoute.startsWith("role_selection") || currentRoute.startsWith("welcome"))
+        ) {
+            navigateAfterAuth(uiState.currentUser, isNewRegistration = false)
         }
     }
 
@@ -87,9 +106,24 @@ fun GuiaDeOficiosApp(
         currentRoute.startsWith("register")
     val selectedBottomTab = when {
         currentRoute.startsWith("my_account") -> "account"
-        currentRoute.startsWith("client_home") -> "home"
-        currentRoute.startsWith("client_results") || currentRoute.startsWith("professional_profile") -> "contacts"
+        currentRoute.startsWith("my_requests_history") -> "contacts"
         else -> "home"
+    }
+
+    fun navigateToRoleHome() {
+        mainViewModel.refreshInitialData()
+        if (uiState.currentUser.role == "professional") {
+            val proId = uiState.currentUser.professional_id?.takeIf { it.isNotBlank() }
+                ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+            mainViewModel.loadProfessionalDashboard(proId)
+            navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
+                launchSingleTop = true
+            }
+        } else {
+            navController.navigate(StitchScreen.ClientHomeCategories.route) {
+                launchSingleTop = true
+            }
+        }
     }
 
     Scaffold(
@@ -106,11 +140,7 @@ fun GuiaDeOficiosApp(
         topBar = {
             if (!isAuthGatewayScreen) {
                 StitchTopAppBar(
-                    onMenuClick = {
-                        navController.navigate(StitchScreen.UserAccount.route) {
-                            launchSingleTop = true
-                        }
-                    },
+                    onMenuClick = { navigateToRoleHome() },
                     onActionClick = {
                         navController.navigate(StitchScreen.UserAccount.route) {
                             launchSingleTop = true
@@ -119,7 +149,7 @@ fun GuiaDeOficiosApp(
                     actionLabel = if (uiState.currentUser.full_name.isNotBlank()) {
                         uiState.currentUser.full_name.substringBefore(" ")
                     } else {
-                        "Cuenta"
+                        "Mi cuenta"
                     }
                 )
             }
@@ -130,27 +160,15 @@ fun GuiaDeOficiosApp(
                     selectedTab = selectedBottomTab,
                     onSelectTab = { tabKey ->
                         when (tabKey) {
-                            "home" -> {
-                                mainViewModel.refreshInitialData()
-                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                    launchSingleTop = true
-                                }
-                            }
+                            "home" -> navigateToRoleHome()
                             "contacts" -> {
-                                mainViewModel.searchProfessionals(
-                                    categoryId = 0,
-                                    categoryTitle = "Profesionales del barrio",
-                                    filter = "all"
-                                )
-                                navController.navigate(StitchScreen.ClientSearchResults.createRoute(0)) {
+                                mainViewModel.loadMyClientRequests()
+                                navController.navigate(StitchScreen.ClientMyRequestsHistory.route) {
                                     launchSingleTop = true
                                 }
                             }
                             "help" -> {
-                                mainViewModel.showStatusMessage("Usá la tarjeta '¿No sabés qué profesional necesitás?' en Inicio para recibir asistencia inmediata.")
-                                navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                    launchSingleTop = true
-                                }
+                                showHelpDialog = true
                             }
                             "account" -> {
                                 navController.navigate(StitchScreen.UserAccount.route) {
@@ -200,34 +218,12 @@ fun GuiaDeOficiosApp(
                                 fullName = fullName,
                                 role = role
                             ) { user ->
-                                mainViewModel.refreshInitialData()
-                                if (user.role == "professional") {
-                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    mainViewModel.loadProfessionalDashboard(proId)
-                                    navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                } else {
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                }
+                                navigateAfterAuth(user, isNewRegistration = false)
                             }
                         },
                         onLoginWithCredentials = { identifier, password ->
                             mainViewModel.loginWithEmail(identifier, password) { user ->
-                                mainViewModel.refreshInitialData()
-                                if (user.role == "professional") {
-                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    mainViewModel.loadProfessionalDashboard(proId)
-                                    navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                } else {
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                }
+                                navigateAfterAuth(user, isNewRegistration = false)
                             }
                         },
                         onNavigateToRegister = { role ->
@@ -265,48 +261,17 @@ fun GuiaDeOficiosApp(
                                 neighborhood = neighborhood,
                                 address = address
                             ) { user ->
-                                mainViewModel.refreshInitialData()
-                                if (user.role == "professional") {
-                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId)) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                } else {
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                }
+                                navigateAfterAuth(user, isNewRegistration = user.role == "professional")
                             }
                         },
                         onSubmitManual = { input ->
                             mainViewModel.registerManual(input) { user ->
-                                mainViewModel.refreshInitialData()
-                                if (user.role == "professional") {
-                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId)) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                } else {
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                }
+                                navigateAfterAuth(user, isNewRegistration = true)
                             }
                         },
                         onSubmitLogin = { emailOrPhone, password ->
                             mainViewModel.loginWithEmail(emailOrPhone, password) { user ->
-                                mainViewModel.refreshInitialData()
-                                if (user.role == "professional") {
-                                    val proId = user.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
-                                    mainViewModel.loadProfessionalDashboard(proId)
-                                    navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId)) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                } else {
-                                    navController.navigate(StitchScreen.ClientHomeCategories.route) {
-                                        popUpTo(StitchScreen.RoleSelection.route) { inclusive = true }
-                                    }
-                                }
+                                navigateAfterAuth(user, isNewRegistration = false)
                             }
                         },
                         onBack = { navController.popBackStack() }
@@ -380,8 +345,22 @@ fun GuiaDeOficiosApp(
                         onSuggestGeocode = { type, locality, query, onResult ->
                             mainViewModel.fetchGeocodeSuggestions(type, locality, query, onResult)
                         },
+                        onOpenMyRequests = {
+                            mainViewModel.loadMyClientRequests()
+                            navController.navigate(StitchScreen.ClientMyRequestsHistory.route) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenVerification = {
+                            val proId = uiState.currentUser.professional_id?.takeIf { it.isNotBlank() }
+                                ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+                            navController.navigate(StitchScreen.ProfessionalVerificationOnboarding.createRoute(proId)) {
+                                launchSingleTop = true
+                            }
+                        },
                         onOpenProfessionalPanel = {
-                            val proId = uiState.currentUser.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
+                            val proId = uiState.currentUser.professional_id?.takeIf { it.isNotBlank() }
+                                ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
                             mainViewModel.loadProfessionalDashboard(proId)
                             navController.navigate(StitchScreen.ProfessionalDashboard.createRoute(proId))
                         },
@@ -392,6 +371,54 @@ fun GuiaDeOficiosApp(
                                 }
                             }
                         }
+                    )
+                }
+
+                // 12. Pestaña Mis Contactos (Historial real de solicitudes del vecino vía GET /api/v1/requests/my)
+                composable(StitchScreen.ClientMyRequestsHistory.route) {
+                    MyRequestsHistoryScreen(
+                        requests = uiState.myClientRequests,
+                        isLoading = uiState.isLoading,
+                        onRefresh = { mainViewModel.loadMyClientRequests() },
+                        onContactWhatsApp = { req ->
+                            val msg = "Hola ${req.professional_name.substringBefore(" ")}, te escribo desde Guía de Oficios sobre mi solicitud: “${req.problem_description}”."
+                            launchWhatsApp(context, req.professional_phone, msg)
+                        },
+                        onCallProfessional = { req ->
+                            launchPhoneDialer(context, req.professional_phone)
+                        },
+                        onOpenTrackingMap = { req ->
+                            navController.navigate(StitchScreen.ClientProfessionalEnRouteMap.createRoute(req.id))
+                        },
+                        onOpenReview = { req ->
+                            navController.navigate(StitchScreen.ClientJobCompletedReview.createRoute(req.id))
+                        },
+                        onBackHome = { navigateToRoleHome() }
+                    )
+                }
+
+                // 13. Seguimiento en Vivo con Mapa y ETA (reserva Paso 11)
+                composable(
+                    route = StitchScreen.ClientProfessionalEnRouteMap.route,
+                    arguments = listOf(navArgument("requestId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val reqId = backStackEntry.arguments?.getString("requestId") ?: ""
+                    val req = uiState.myClientRequests.firstOrNull { it.id == reqId } ?: uiState.activeRequest
+                    ProfessionalEnRouteMapScreen(
+                        request = req,
+                        onCallProfessional = {
+                            req?.let { launchPhoneDialer(context, it.professional_phone) }
+                        },
+                        onWhatsAppProfessional = {
+                            req?.let {
+                                val msg = "Hola ${it.professional_name.substringBefore(" ")}, te escribo por mi pedido en Guía de Oficios."
+                                launchWhatsApp(context, it.professional_phone, msg)
+                            }
+                        },
+                        onCompleteJobAndReview = {
+                            navController.navigate(StitchScreen.ClientJobCompletedReview.createRoute(reqId))
+                        },
+                        onBack = { navController.popBackStack() }
                     )
                 }
 
@@ -607,6 +634,85 @@ fun GuiaDeOficiosApp(
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
                     color = Primary
+                )
+            }
+
+            if (showHelpDialog) {
+                AlertDialog(
+                    onDismissRequest = { showHelpDialog = false },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.VerifiedUser,
+                            contentDescription = null,
+                            tint = Secondary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    },
+                    title = {
+                        Text(
+                            text = "Ayuda y Seguridad Vecinal",
+                            fontWeight = FontWeight.ExtraBold,
+                            color = OnSurface
+                        )
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "• Todos los profesionales validan su identidad con DNI frente y dorso.\n• Pedí siempre presupuesto claro antes de aprobar un trabajo.\n• Si necesitás asistencia humana inmediata, llamá gratis a nuestra línea vecinal.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = OnSurfaceVariant
+                            )
+                            Surface(
+                                color = SurfaceContainerLow,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, OutlineVariant),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Call,
+                                        contentDescription = null,
+                                        tint = Primary
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "0800-444-OFICIO (6342)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Primary
+                                        )
+                                        Text(
+                                            text = "Atención telefónica gratuita para vecinos",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = OnSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showHelpDialog = false
+                                launchPhoneDialer(context, "08004446342")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+                        ) {
+                            Icon(imageVector = Icons.Default.Call, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Llamar al 0800", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showHelpDialog = false }) {
+                            Text("Cerrar", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 )
             }
         }

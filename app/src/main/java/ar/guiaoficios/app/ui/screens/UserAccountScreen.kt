@@ -9,11 +9,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Handyman
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.LocationOn
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.*
@@ -59,6 +62,8 @@ fun UserAccountScreen(
     onUpdateProfile: (UpdateUserProfileInputDto) -> Unit = {},
     onValidateAddressGeocode: (locality: String, address: String, onResult: (GeocodeResultDto) -> Unit) -> Unit = { _, _, _ -> },
     onSuggestGeocode: (type: String, locality: String, query: String, onResult: (List<GeocodeSuggestionDto>) -> Unit) -> Unit = { _, _, _, _ -> },
+    onOpenMyRequests: () -> Unit = {},
+    onOpenVerification: () -> Unit = {},
     onOpenProfessionalPanel: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -747,6 +752,54 @@ fun UserAccountScreen(
 
         if (user.role == "professional") {
             item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (user.is_dni_verified) Color(0xFFF0FDF4) else Color(0xFFFFFBEB)
+                    ),
+                    border = BorderStroke(
+                        1.5.dp,
+                        if (user.is_dni_verified) Color(0xFF15803D) else Color(0xFFD97706)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (user.is_dni_verified) Icons.Default.VerifiedUser else Icons.Default.WarningAmber,
+                            contentDescription = null,
+                            tint = if (user.is_dni_verified) Color(0xFF15803D) else Color(0xFFB45309),
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Column {
+                            Text(
+                                text = if (user.is_dni_verified) {
+                                    "Legajo y DNI verificados"
+                                } else {
+                                    "Verificación de DNI pendiente"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (user.is_dni_verified) Color(0xFF14532D) else Color(0xFF92400E)
+                            )
+                            Text(
+                                text = if (user.is_dni_verified) {
+                                    "Tu perfil muestra el sello de vecino verificado en el barrio."
+                                } else {
+                                    "Subí las fotos de tu DNI y tu matrícula para recibir más pedidos."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (user.is_dni_verified) Color(0xFF166534) else Color(0xFF78350F)
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
                 Button(
                     onClick = onOpenProfessionalPanel,
                     modifier = Modifier
@@ -759,6 +812,45 @@ fun UserAccountScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "Abrir mi Panel de Profesional",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onOpenVerification,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.5.dp, PrimaryContainer)
+                ) {
+                    Icon(imageVector = Icons.Default.Badge, contentDescription = null, tint = PrimaryContainer)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Actualizar DNI y Matrícula",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryContainer
+                    )
+                }
+            }
+        } else {
+            item {
+                Button(
+                    onClick = onOpenMyRequests,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryContainer)
+                ) {
+                    Icon(imageVector = Icons.Default.History, contentDescription = null)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Ver mis contactos y solicitudes",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )

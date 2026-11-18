@@ -265,17 +265,21 @@ fun StitchTopAppBar(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onMenuClick() }
+                    .padding(end = 6.dp)
             ) {
                 IconButton(
                     onClick = onMenuClick,
                     modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Menu,
-                        contentDescription = "Abrir menú",
+                        imageVector = Icons.Default.Home,
+                        contentDescription = "Ir al inicio",
                         tint = Primary,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(4.dp))
@@ -294,7 +298,7 @@ fun StitchTopAppBar(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.SwapHoriz,
+                        imageVector = Icons.Default.AccountCircle,
                         contentDescription = actionLabel,
                         tint = Primary,
                         modifier = Modifier.size(18.dp)

@@ -9,7 +9,7 @@ Repositorio oficial de la aplicación móvil Android para **Guía de Oficios**, 
 ---
 
 ## 📚 Plan de Ejecución y Documentación en `/docs`
-1. 🚀 **[`docs/06_radiografia_vistas_y_plan_paso_a_paso.md`](docs/06_radiografia_vistas_y_plan_paso_a_paso.md)**: **[HOJA DE RUTA DEL EQUIPO]** Radiografía completa de las 15 vistas, auditoría del esqueleto base, guía de ejecución local y checklist de los **14 Pasos Secuenciales** (ramas `feat/paso-XX-...`).
+1. 🚀 **[`docs/06_radiografia_vistas_y_plan_paso_a_paso.md`](docs/06_radiografia_vistas_y_plan_paso_a_paso.md)**: **[HOJA DE RUTA DEL EQUIPO]** Radiografía completa de las 15 vistas, auditoría del esqueleto base, guía de ejecución local y checklist de los **14 Pasos Secuenciales** (ramas `feat/paso-XX-...` y `fix/paso-XX-...`).
 2. [`docs/01_especificacion_mvp_y_evolutivos.md`](docs/01_especificacion_mvp_y_evolutivos.md): Especificación funcional del MVP y endpoints REST.
 3. [`docs/02_guia_ux_ui_accesible.md`](docs/02_guia_ux_ui_accesible.md): Paleta de colores, tipografía y reglas de accesibilidad (`WCAG AAA`, botones de `56.dp`).
 4. [`docs/03_trabajo_colaborativo_y_onboarding.md`](docs/03_trabajo_colaborativo_y_onboarding.md): Organización del trabajo en equipo entre Android Studio y Docker, modularización y ramas.
@@ -21,18 +21,18 @@ Repositorio oficial de la aplicación móvil Android para **Guía de Oficios**, 
 
 | Paso | Pantallas / Componentes | Estado |
 | :---: | :--- | :---: |
-| **Paso 1** | • Modularización de `StitchWorkflowScreens.kt` en archivos individuales por vista<br>• `GdoLogoBadge` oficial (escudo #1E40AF + tilde verde #15803D)<br>• `RoleSelectionScreen.kt` (Vista #8 con selector de rol inicial 96dp)<br>• Rediseño de Login: eliminar AlertDialog precario, formulario dedicado con estados de carga y manejo inline de errores | 🔜 **En curso (Punto de partida)** |
-| **Paso 2** | • `RegisterScreen.kt`: selector visual de rol, normalización telefónica, selector de barrio real y términos de convivencia legal | ⏳ Pendiente |
-| **Paso 3** | • Redirección inteligente post-login según rol (`client` vs `professional` verificado vs onboarding) | ⏳ Pendiente |
-| **Paso 4** | • Separación de botones TopAppBar, pestaña 'Mis contactos' a historial real y pantalla 'Mi Cuenta' por rol | ⏳ Pendiente |
-| **Paso 5** | • Home del vecino (Vista #4): chips de diagnóstico sin textos pre-escritos y navegación a resultados | ⏳ Pendiente |
-| **Paso 6** | • `SearchResultsScreen` (Vista #5): fotos de perfil 64dp, badges combinados (urgencia + matrícula) y tira para mayores | ⏳ Pendiente |
+| **Paso 1** | • Modularización de `StitchWorkflowScreens.kt` en 16 archivos individuales por vista<br>• `GdoLogoBadge` oficial (escudo `#1E40AF` + tilde verde `#15803D`)<br>• `RoleSelectionScreen.kt` (Vista #8 con selector de rol inicial `96.dp`)<br>• Rediseño de Login: `WelcomeLoginScreen.kt` con BottomSheet dedicado, estados de carga y manejo inline de errores | ✅ **Completado** |
+| **Paso 2** | • `RegisterScreen.kt`: selector visual de rol, normalización telefónica (`+54 9 11`), autocompletado en vivo de localidades y calles normalizadas, validación en mapa y términos de convivencia legal | ✅ **Completado** |
+| **Paso 3** | • Redirección inteligente post-login y post-registro (`navigateAfterAuth` en `MainActivity.kt`) según rol (`client` vs `professional` sin DNI verificado -> Vista #13 vs `professional` verificado -> Panel Vista #14) | ✅ **Completado** |
+| **Paso 4** | • Separación de botones en `StitchTopAppBar` (Inicio del rol vs Mi Cuenta)<br>• Pestaña `Mis contactos` conectada a `MyRequestsHistoryScreen.kt` (`GET /api/v1/requests/my`) y pestaña `Ayuda` con línea gratuita `0800-444-OFICIO`<br>• `UserAccountScreen.kt` diferenciada por rol (historial de pedidos para vecinos; estado de DNI/Matrícula y acceso al Panel para profesionales) | ✅ **Completado** |
+| **Paso 5** | • Home del vecino (Vista #4): chips de diagnóstico sin textos pre-escritos y navegación directa a resultados | 🔜 **Próximo paso** |
+| **Paso 6** | • `SearchResultsScreen` (Vista #5): fotos de perfil `64.dp`, badges combinados (urgencia + matrícula) y tira para mayores | ⏳ Pendiente |
 | **Paso 7** | • `ProfessionalProfileScreen` (Vista #6): sin fallbacks falsos, 3 tarjetas de garantía, portfolio Coil y opiniones | ⏳ Pendiente |
 | **Paso 8** | • `TopProfessionalsMonthScreen` (Vista #7): podio barrial (#1 Oro, #2 Plata, #3 Bronce) y filtros | ⏳ Pendiente |
-| **Paso 9** | • `GuidedRequestScreen` (Vista #9): tarjetas de urgencia 72dp, preview y borrado de foto | ⏳ Pendiente |
-| **Paso 10** | • `RequestConfirmationScreen` (Vista #10): confirmación con tilde 64dp, botones gigantes WhatsApp/Llamada | ⏳ Pendiente |
+| **Paso 9** | • `GuidedRequestScreen` (Vista #9): tarjetas de urgencia `72.dp`, preview y borrado de foto | ⏳ Pendiente |
+| **Paso 10** | • `RequestConfirmationScreen` (Vista #10): confirmación con tilde `64.dp`, botones gigantes WhatsApp/Llamada | ⏳ Pendiente |
 | **Paso 11** | • `ProfessionalEnRouteMapScreen` (Vista #11) + pestaña 'Mis contactos' con mapa y ETA | ⏳ Pendiente |
-| **Paso 12** | • `JobCompletedReviewScreen` (Vista #12): 5 estrellas doradas 48dp, 5 aspectos destacables | ⏳ Pendiente |
+| **Paso 12** | • `JobCompletedReviewScreen` (Vista #12): 5 estrellas doradas `48.dp`, 5 aspectos destacables | ⏳ Pendiente |
 | **Paso 13** | • `ProfessionalVerificationScreen` (Vista #13): selector de 8 rubros, fotos reales DNI Frente/Dorso | ⏳ Pendiente |
 | **Paso 14** | • `ProfessionalDashboardScreen` (Vista #14) + `ProfessionalAcceptJobScreen` (Vista #15) + APK Final | ⏳ Pendiente |
 
