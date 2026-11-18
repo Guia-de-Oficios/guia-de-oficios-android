@@ -37,11 +37,23 @@ interface GuiaDeOficiosApi {
         @Body input: UpdateAddressInputDto
     ): UserDto
 
+    @PUT("api/v1/users/me")
+    suspend fun updateUserProfile(
+        @Body input: UpdateUserProfileInputDto
+    ): UserDto
+
     @GET("api/v1/geocode")
     suspend fun geocodeAddress(
         @Query("locality") locality: String = "",
         @Query("address") address: String = ""
     ): GeocodeResultDto
+
+    @GET("api/v1/geocode/suggest")
+    suspend fun suggestGeocode(
+        @Query("type") type: String = "locality",
+        @Query("locality") locality: String = "",
+        @Query("q") query: String = ""
+    ): List<GeocodeSuggestionDto>
 
     // 2. Subida real Multipart de imágenes (Averías, DNI Frente/Dorso, Matrícula) (GDO-10)
     @Multipart

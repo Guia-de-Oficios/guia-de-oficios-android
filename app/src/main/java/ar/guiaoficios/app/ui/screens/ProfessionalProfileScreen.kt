@@ -140,7 +140,8 @@ fun ProfessionalProfileScreen(
                 }
             }
 
-            if (professional.portfolio.isNotEmpty()) {
+            val portfolioList = professional.safePortfolio
+            if (portfolioList.isNotEmpty()) {
                 item {
                     Card(
                         shape = RoundedCornerShape(12.dp),
@@ -149,7 +150,7 @@ fun ProfessionalProfileScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("📸 Trabajos realizados en el barrio", style = MaterialTheme.typography.titleLarge)
-                            professional.portfolio.forEach { itemPortfolio ->
+                            portfolioList.forEach { itemPortfolio ->
                                 Surface(
                                     color = SurfaceContainerLow,
                                     shape = RoundedCornerShape(8.dp),
@@ -166,7 +167,8 @@ fun ProfessionalProfileScreen(
                 }
             }
 
-            if (professional.reviews.isNotEmpty()) {
+            val reviewsList = professional.safeReviews
+            if (reviewsList.isNotEmpty()) {
                 item {
                     Card(
                         shape = RoundedCornerShape(12.dp),
@@ -175,7 +177,7 @@ fun ProfessionalProfileScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("💬 Opiniones de vecinos verificados", style = MaterialTheme.typography.titleLarge)
-                            professional.reviews.forEach { rev ->
+                            reviewsList.forEach { rev ->
                                 Surface(
                                     color = SurfaceContainerLow,
                                     shape = RoundedCornerShape(8.dp),

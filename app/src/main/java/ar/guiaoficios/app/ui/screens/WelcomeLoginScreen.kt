@@ -364,30 +364,14 @@ fun WelcomeRoleScreen(
                         textAlign = TextAlign.Center
                     )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        StitchRoleChoicePill(
-                            title = "Vecino",
-                            subtitle = "Busco oficios",
-                            icon = Icons.Default.PersonSearch,
-                            selected = selectedRole == "client",
-                            onClick = { selectedRole = "client" },
-                            modifier = Modifier.weight(1f)
-                        )
-                        StitchRoleChoicePill(
-                            title = "Profesional",
-                            subtitle = "Ofrezco oficio",
-                            icon = Icons.Default.Handyman,
-                            selected = selectedRole == "professional",
-                            onClick = { selectedRole = "professional" },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
                     Surface(
-                        onClick = { onNavigateToRegister(selectedRole) },
+                        onClick = {
+                            if (onBackToRoleSelection != null) {
+                                onBackToRoleSelection()
+                            } else {
+                                onNavigateToRegister(selectedRole)
+                            }
+                        },
                         shape = RoundedCornerShape(12.dp),
                         color = Color(0xFFEFF6FF),
                         border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
@@ -401,7 +385,7 @@ fun WelcomeRoleScreen(
                             horizontalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = "Registrarme gratis",
+                                text = "Elegir mi rol y registrarme gratis",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryContainer

@@ -15,6 +15,8 @@ import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -146,7 +148,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        statusMessage = "Error de conexión con la API (${e.localizedMessage}). Verificá que el servidor Go + PostgreSQL esté encendido."
+                        statusMessage = "No pudimos conectar con el servidor. Verificá tu conexión a internet."
                     )
                 }
             }
@@ -405,6 +407,99 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var geocodeSuggestJob: Job? = null
+
+    fun fetchGeocodeSuggestions(
+        type: String,
+        locality: String = "",
+        query: String,
+        onResult: (List<GeocodeSuggestionDto>) -> Unit
+    ) {
+        geocodeSuggestJob?.cancel()
+        val cleanQuery = query.trim()
+        if (cleanQuery.length < 2) {
+            onResult(emptyList())
+            return
+        }
+        geocodeSuggestJob = viewModelScope.launch {
+            delay(300) // Debounce de 300ms para evitar saturación de llamadas al tipear
+            try {
+                val remote = api.suggestGeocode(type = type, locality = locality.trim(), query = cleanQuery)
+                if (remote.isNotEmpty()) {
+                    onResult(remote)
+                    return@launch
+                }
+            } catch (_: Exception) {
+                // Fallback a catálogo local sugerido si no hay red
+            }
+
+            if (type == "locality") {
+                val qLower = cleanQuery.lowercase()
+                val localMatches = ARGENTINA_SUGGESTED_LOCALITIES.filter {
+                    it.label.lowercase().contains(qLower) || it.zone.lowercase().contains(qLower)
+                }.take(6).map {
+                    GeocodeSuggestionDto(
+                        label = it.label,
+                        subtitle = it.zone,
+                        locality = it.label,
+                        lat = it.lat,
+                        lng = it.lng,
+                        source = "local_catalog"
+                    )
+                }
+                onResult(localMatches)
+            } else {
+                onResult(emptyList())
+            }
+        }
+    }
+
+    fun updateUserProfile(
+        input: UpdateUserProfileInputDto,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, authError = null, statusMessage = null) }
+            try {
+                val geo = if (input.saved_lat == 0.0 || input.saved_lng == 0.0) {
+                    resolveGeocodeInternal(locality = input.neighborhood, address = input.address.ifBlank { input.saved_address })
+                } else {
+                    GeocodeResultDto(
+                        formatted_address = input.saved_address,
+                        neighborhood = input.neighborhood,
+                        lat = input.saved_lat,
+                        lng = input.saved_lng,
+                        verified = true
+                    )
+                }
+                val enriched = input.copy(
+                    neighborhood = geo.neighborhood.ifBlank { input.neighborhood },
+                    saved_address = geo.formatted_address,
+                    saved_lat = geo.lat,
+                    saved_lng = geo.lng
+                )
+                val updatedUser = api.updateUserProfile(enriched)
+                sessionManager.updateSavedUser(updatedUser)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        currentUser = updatedUser,
+                        statusMessage = "¡Perfil guardado con éxito!"
+                    )
+                }
+                onSuccess()
+            } catch (e: Exception) {
+                val errMsg = extractApiErrorMessage(e, "No se pudo guardar el perfil")
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        statusMessage = errMsg
+                    )
+                }
+            }
+        }
+    }
+
     fun updateAddress(newAddress: String, locality: String = "") {
         viewModelScope.launch {
             try {
@@ -421,12 +516,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         currentUser = updatedUser,
-                        statusMessage = "Ubicación validada y actualizada: ${updatedUser.saved_address}"
+                        statusMessage = "Dirección actualizada correctamente"
                     )
                 }
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(statusMessage = "No se pudo actualizar la dirección: ${e.localizedMessage}")
+                    it.copy(statusMessage = "No se pudo actualizar la dirección")
                 }
             }
         }
@@ -439,7 +534,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(diagnosticSuggestion = res) }
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(statusMessage = "No se pudo consultar el diagnóstico: ${e.localizedMessage}")
+                    it.copy(statusMessage = "No se pudo consultar el diagnóstico")
                 }
             }
         }
@@ -469,18 +564,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     topRated = if (filter == "top_rated") true else null,
                     lat = _uiState.value.currentUser.saved_lat,
                     lng = _uiState.value.currentUser.saved_lng
-                )
+                ) ?: emptyList()
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         professionals = pros
                     )
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        statusMessage = "Error buscando profesionales: ${e.localizedMessage}"
+                        professionals = emptyList()
                     )
                 }
             }
@@ -599,7 +694,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         isLoading = false,
                         selectedProfessional = refreshedDetail ?: it.selectedProfessional,
-                        statusMessage = "¡Gracias por tu calificación! El puntaje de Roberto se actualizó en PostgreSQL."
+                        statusMessage = "¡Gracias por tu calificación!"
                     )
                 }
                 onSubmitted()
@@ -627,7 +722,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         isLoading = false,
                         selectedProfessional = updatedPro,
-                        statusMessage = "Documentación DNI y Matrícula guardada en PostgreSQL."
+                        statusMessage = "Documentación guardada correctamente"
                     )
                 }
                 loadProfessionalDashboard(professionalId)

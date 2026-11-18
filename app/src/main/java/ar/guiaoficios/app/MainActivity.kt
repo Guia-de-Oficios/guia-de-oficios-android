@@ -7,10 +7,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -91,7 +93,16 @@ fun GuiaDeOficiosApp(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = PrimaryContainer,
+                    contentColor = OnPrimaryContainer,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        },
         topBar = {
             if (!isAuthGatewayScreen) {
                 StitchTopAppBar(
@@ -243,6 +254,9 @@ fun GuiaDeOficiosApp(
                         onValidateAddressGeocode = { locality, address, onResult ->
                             mainViewModel.validateAddressGeocode(locality, address, onResult)
                         },
+                        onSuggestGeocode = { type, locality, query, onResult ->
+                            mainViewModel.fetchGeocodeSuggestions(type, locality, query, onResult)
+                        },
                         onContinueGoogle = { email, fullName, selectedRole, neighborhood, address ->
                             mainViewModel.authenticateWithGoogle(
                                 email = email,
@@ -304,6 +318,7 @@ fun GuiaDeOficiosApp(
                     HomeScreen(
                         userName = uiState.currentUser.full_name,
                         savedAddress = uiState.currentUser.saved_address,
+                        isProfileIncomplete = uiState.currentUser.isProfileIncomplete,
                         categories = uiState.categories,
                         diagnosticResult = uiState.diagnosticSuggestion,
                         onSelectCategory = { cat ->
@@ -329,6 +344,14 @@ fun GuiaDeOficiosApp(
                         onUpdateAddress = { addr ->
                             mainViewModel.updateAddress(addr)
                         },
+                        onSuggestGeocode = { type, locality, query, onResult ->
+                            mainViewModel.fetchGeocodeSuggestions(type, locality, query, onResult)
+                        },
+                        onGoToCompleteProfile = {
+                            navController.navigate(StitchScreen.UserAccount.route) {
+                                launchSingleTop = true
+                            }
+                        },
                         onOpenTopMonth = {
                             mainViewModel.searchProfessionals(
                                 categoryId = 0,
@@ -340,12 +363,22 @@ fun GuiaDeOficiosApp(
                     )
                 }
 
-                // 11. Mi Cuenta (Perfil Real del Usuario + Cerrar Sesión)
+                // 11. Mi Cuenta (Perfil Real del Usuario + Edición Completa + Cerrar Sesión)
                 composable(StitchScreen.UserAccount.route) {
                     UserAccountScreen(
                         user = uiState.currentUser,
+                        isLoading = uiState.isLoading,
                         onUpdateAddress = { addr ->
                             mainViewModel.updateAddress(addr)
+                        },
+                        onUpdateProfile = { profileInput ->
+                            mainViewModel.updateUserProfile(profileInput)
+                        },
+                        onValidateAddressGeocode = { locality, address, onResult ->
+                            mainViewModel.validateAddressGeocode(locality, address, onResult)
+                        },
+                        onSuggestGeocode = { type, locality, query, onResult ->
+                            mainViewModel.fetchGeocodeSuggestions(type, locality, query, onResult)
                         },
                         onOpenProfessionalPanel = {
                             val proId = uiState.currentUser.professional_id ?: MainViewModel.DEFAULT_ROBERTO_PRO_ID
